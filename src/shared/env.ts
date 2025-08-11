@@ -12,12 +12,15 @@ const EnvSchema = z.object({
   ACCESS_COOKIE_NAME: z.string().default('sb-access-token'),
   REFRESH_COOKIE_NAME: z.string().default('sb-refresh-token'),
   FRONTEND_URL: z.string().url().optional(),
+  COOKIE_SAMESITE: z
+    .enum(['lax', 'strict', 'none'])
+    .optional()
+    .default('lax'),
 });
 
 const parsed = EnvSchema.safeParse(process.env);
 
 if (!parsed.success) {
-  // eslint-disable-next-line no-console
   console.error('Invalid environment variables:', parsed.error.flatten().fieldErrors);
   process.exit(1);
 }

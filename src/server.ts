@@ -33,7 +33,27 @@ app.get('/health', (_req, res) => {
 app.use('/auth', buildAuthRouter({ supabase }));
 
 app.get('/me', authMiddleware({ supabase }), async (req, res) => {
-  const user = (req as any).user;
+  const authUser = (req as any).user;
+  
+  const { data: userData, error } = await supabase
+    .from('users')
+    .select('id, email, username, created_at, updated_at')
+    .eq('id', authUser.id)
+    .single();
+
+  if (error) {
+    console.error('Error fetching user data:', error);
+    return res.status(500).json({ error: 'Failed to fetch user data' });
+  }
+
+  const user = {
+    ...authUser,
+    email: userData.email,
+    username: userData.username,
+    created_at: userData.created_at,
+    updated_at: userData.updated_at
+  };
+
   res.json({ user });
 });
 

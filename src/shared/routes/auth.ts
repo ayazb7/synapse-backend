@@ -43,13 +43,13 @@ export function buildAuthRouter({ supabase }: BuildAuthRouterArgs) {
       const maxAge = remember ? 60 * 60 * 24 * 60 : undefined; // 60 days
       res.cookie(env.ACCESS_COOKIE_NAME, data.session.access_token, {
         httpOnly: true,
-        sameSite: 'lax',
+        sameSite: (env.COOKIE_SAMESITE as any) ?? 'lax',
         secure: process.env.NODE_ENV === 'production',
         maxAge,
       });
       res.cookie(env.REFRESH_COOKIE_NAME, data.session.refresh_token, {
         httpOnly: true,
-        sameSite: 'lax',
+        sameSite: (env.COOKIE_SAMESITE as any) ?? 'lax',
         secure: process.env.NODE_ENV === 'production',
         maxAge,
       });
@@ -69,13 +69,13 @@ export function buildAuthRouter({ supabase }: BuildAuthRouterArgs) {
     const maxAge = remember ? 60 * 60 * 24 * 60 : undefined; // 60 days
     res.cookie(env.ACCESS_COOKIE_NAME, data.session.access_token, {
       httpOnly: true,
-      sameSite: 'lax',
+      sameSite: (env.COOKIE_SAMESITE as any) ?? 'lax',
       secure: process.env.NODE_ENV === 'production',
       maxAge,
     });
     res.cookie(env.REFRESH_COOKIE_NAME, data.session.refresh_token, {
       httpOnly: true,
-      sameSite: 'lax',
+      sameSite: (env.COOKIE_SAMESITE as any) ?? 'lax',
       secure: process.env.NODE_ENV === 'production',
       maxAge,
     });
@@ -106,13 +106,13 @@ export function buildAuthRouter({ supabase }: BuildAuthRouterArgs) {
     const maxAge = remember ? 60 * 60 * 24 * 60 : undefined;
     res.cookie(env.ACCESS_COOKIE_NAME, access_token, {
       httpOnly: true,
-      sameSite: 'lax',
+      sameSite: (env.COOKIE_SAMESITE as any) ?? 'lax',
       secure: process.env.NODE_ENV === 'production',
       maxAge,
     });
     res.cookie(env.REFRESH_COOKIE_NAME, refresh_token, {
       httpOnly: true,
-      sameSite: 'lax',
+      sameSite: (env.COOKIE_SAMESITE as any) ?? 'lax',
       secure: process.env.NODE_ENV === 'production',
       maxAge,
     });
