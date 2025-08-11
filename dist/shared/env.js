@@ -15,6 +15,7 @@ const EnvSchema = zod_1.z.object({
     CORS_ORIGIN: zod_1.z.string().optional(),
     ACCESS_COOKIE_NAME: zod_1.z.string().default('sb-access-token'),
     REFRESH_COOKIE_NAME: zod_1.z.string().default('sb-refresh-token'),
+    FRONTEND_URL: zod_1.z.string().url().optional(),
 });
 const parsed = EnvSchema.safeParse(process.env);
 if (!parsed.success) {

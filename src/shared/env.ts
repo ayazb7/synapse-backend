@@ -11,6 +11,7 @@ const EnvSchema = z.object({
   CORS_ORIGIN: z.string().optional(),
   ACCESS_COOKIE_NAME: z.string().default('sb-access-token'),
   REFRESH_COOKIE_NAME: z.string().default('sb-refresh-token'),
+  FRONTEND_URL: z.string().url().optional(),
 });
 
 const parsed = EnvSchema.safeParse(process.env);

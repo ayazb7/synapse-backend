@@ -6,5 +6,6 @@ export declare const env: {
     REFRESH_COOKIE_NAME: string;
     SUPABASE_SERVICE_ROLE_KEY?: string | undefined;
     CORS_ORIGIN?: string | undefined;
+    FRONTEND_URL?: string | undefined;
 };
 //# sourceMappingURL=env.d.ts.map
