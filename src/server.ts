@@ -33,6 +33,13 @@ app.get('/health', (_req, res) => {
 app.use('/auth', buildAuthRouter({ supabase }));
 
 app.get('/me', authMiddleware({ supabase }), async (req, res) => {
+  res.set({
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, private',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+    'Surrogate-Control': 'no-store',
+    'Vary': 'Cookie, Origin',
+  });
   const authUser = (req as any).user;
   
   const { data: userData, error } = await supabase
