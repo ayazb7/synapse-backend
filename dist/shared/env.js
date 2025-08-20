@@ -16,10 +16,13 @@ const EnvSchema = zod_1.z.object({
     ACCESS_COOKIE_NAME: zod_1.z.string().default('sb-access-token'),
     REFRESH_COOKIE_NAME: zod_1.z.string().default('sb-refresh-token'),
     FRONTEND_URL: zod_1.z.string().url().optional(),
+    COOKIE_SAMESITE: zod_1.z
+        .enum(['lax', 'strict', 'none'])
+        .optional()
+        .default('lax'),
 });
 const parsed = EnvSchema.safeParse(process.env);
 if (!parsed.success) {
-    // eslint-disable-next-line no-console
     console.error('Invalid environment variables:', parsed.error.flatten().fieldErrors);
     process.exit(1);
 }

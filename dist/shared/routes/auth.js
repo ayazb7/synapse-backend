@@ -33,18 +33,17 @@ function buildAuthRouter({ supabase }) {
         });
         if (error)
             return res.status(400).json({ error: error.message });
-        // set cookies if session present (depends on email confirmation settings)
         if (data.session) {
             const maxAge = remember ? 60 * 60 * 24 * 60 : undefined; // 60 days
             res.cookie(env_1.env.ACCESS_COOKIE_NAME, data.session.access_token, {
                 httpOnly: true,
-                sameSite: 'lax',
+                sameSite: env_1.env.COOKIE_SAMESITE ?? 'lax',
                 secure: process.env.NODE_ENV === 'production',
                 maxAge,
             });
             res.cookie(env_1.env.REFRESH_COOKIE_NAME, data.session.refresh_token, {
                 httpOnly: true,
-                sameSite: 'lax',
+                sameSite: env_1.env.COOKIE_SAMESITE ?? 'lax',
                 secure: process.env.NODE_ENV === 'production',
                 maxAge,
             });
@@ -62,13 +61,13 @@ function buildAuthRouter({ supabase }) {
         const maxAge = remember ? 60 * 60 * 24 * 60 : undefined; // 60 days
         res.cookie(env_1.env.ACCESS_COOKIE_NAME, data.session.access_token, {
             httpOnly: true,
-            sameSite: 'lax',
+            sameSite: env_1.env.COOKIE_SAMESITE ?? 'lax',
             secure: process.env.NODE_ENV === 'production',
             maxAge,
         });
         res.cookie(env_1.env.REFRESH_COOKIE_NAME, data.session.refresh_token, {
             httpOnly: true,
-            sameSite: 'lax',
+            sameSite: env_1.env.COOKIE_SAMESITE ?? 'lax',
             secure: process.env.NODE_ENV === 'production',
             maxAge,
         });
@@ -97,13 +96,13 @@ function buildAuthRouter({ supabase }) {
         const maxAge = remember ? 60 * 60 * 24 * 60 : undefined;
         res.cookie(env_1.env.ACCESS_COOKIE_NAME, access_token, {
             httpOnly: true,
-            sameSite: 'lax',
+            sameSite: env_1.env.COOKIE_SAMESITE ?? 'lax',
             secure: process.env.NODE_ENV === 'production',
             maxAge,
         });
         res.cookie(env_1.env.REFRESH_COOKIE_NAME, refresh_token, {
             httpOnly: true,
-            sameSite: 'lax',
+            sameSite: env_1.env.COOKIE_SAMESITE ?? 'lax',
             secure: process.env.NODE_ENV === 'production',
             maxAge,
         });
