@@ -46,6 +46,15 @@ app.get('/me', (0, authMiddleware_1.authMiddleware)({ supabase: exports.supabase
         .single();
     if (error) {
         console.error('Error fetching user data:', error);
+        // If user doesn't exist in users table, create one or return auth user data
+        if (error.code === 'PGRST116') {
+            // No user found, return basic auth user data
+            const user = {
+                ...authUser,
+                username: authUser.user_metadata?.username || authUser.email?.split('@')[0] || 'User'
+            };
+            return res.json({ user });
+        }
         return res.status(500).json({ error: 'Failed to fetch user data' });
     }
     const user = {
@@ -90,7 +99,7 @@ app.get('/qbank/practice/next', (0, authMiddleware_1.authMiddleware)({ supabase:
         return res.status(400).json({ error: 'specialty_id is required' });
     const { data: qData, error: qErr } = await exports.supabase
         .from('questions')
-        .select('id, topic_id, type, stem, explanation_l1, explanation_l2, difficulty, time_limit_sec, topics!inner(specialty_id)')
+        .select('id, topic_id, type, stem, options, explanation_l1_points, explanation_l2, topics!inner(specialty_id, name)')
         .eq('topics.specialty_id', specialtyId)
         .eq('is_active', true)
         .limit(50);
@@ -107,13 +116,15 @@ app.get('/qbank/practice/next', (0, authMiddleware_1.authMiddleware)({ supabase:
     const chosen = available.length > 0 ? available[Math.floor(Math.random() * available.length)] : (qData ?? [])[Math.floor(Math.random() * (qData?.length || 1))];
     if (!chosen)
         return res.json({ question: null, options: [], progress: { completed: 0, total: 0 } });
-    const { data: options, error: oErr } = await exports.supabase
-        .from('mcq_options')
-        .select('id, label, body')
-        .eq('question_id', chosen.id)
-        .order('label', { ascending: true });
-    if (oErr)
-        return res.status(500).json({ error: oErr.message });
+    let formattedOptions = [];
+    if (chosen.type === 'MCQ' && chosen.options) {
+        const optionsArray = Array.isArray(chosen.options) ? chosen.options : JSON.parse(chosen.options);
+        formattedOptions = optionsArray.map((option, index) => ({
+            id: index,
+            label: String.fromCharCode(65 + index),
+            body: option
+        }));
+    }
     const { data: prog, error: pErr } = await exports.supabase
         .from('user_question_attempts')
         .select('question_id, questions!inner(topics!inner(specialty_id))')
@@ -128,88 +139,150 @@ app.get('/qbank/practice/next', (0, authMiddleware_1.authMiddleware)({ supabase:
             id: chosen.id,
             type: chosen.type,
             stem: chosen.stem,
-            difficulty: chosen.difficulty,
-            time_limit_sec: chosen.time_limit_sec,
+            topic_name: chosen.topics?.name || 'Unknown Topic',
         },
-        options: options ?? [],
+        options: formattedOptions,
         progress: { completed, total },
     });
 });
 app.post('/qbank/practice/answer', (0, authMiddleware_1.authMiddleware)({ supabase: exports.supabase }), async (req, res) => {
-    const authUser = req.user;
-    const { question_id, selected_option_id, text_answer, time_taken_ms, confidence } = req.body || {};
-    if (!question_id)
-        return res.status(400).json({ error: 'question_id is required' });
-    const { data: q, error: qErr } = await exports.supabase
-        .from('questions')
-        .select('id, type, explanation_l1, explanation_l2')
-        .eq('id', question_id)
-        .single();
-    if (qErr || !q)
-        return res.status(404).json({ error: 'Question not found' });
-    let is_correct = false;
-    if (q.type === 'MCQ') {
-        if (!selected_option_id)
-            return res.status(400).json({ error: 'selected_option_id required for MCQ' });
-        const { data: opt, error: optErr } = await exports.supabase
-            .from('mcq_options')
-            .select('id, is_correct')
-            .eq('id', selected_option_id)
-            .eq('question_id', question_id)
+    try {
+        console.log('=== /qbank/practice/answer REQUEST ===');
+        const authUser = req.user;
+        const { question_id, selected_option_id, text_answer, time_taken_ms, confidence } = req.body || {};
+        console.log('Request body:', req.body);
+        console.log('Auth user ID:', authUser?.id);
+        console.log('Question ID:', question_id);
+        console.log('Selected option ID:', selected_option_id);
+        console.log('Text answer:', text_answer);
+        if (!question_id)
+            return res.status(400).json({ error: 'question_id is required' });
+        console.log('Fetching question from database...');
+        const { data: q, error: qErr } = await exports.supabase
+            .from('questions')
+            .select('id, type, options, correct_answer, explanation_l1_points, explanation_l2, explanation_eli5')
+            .eq('id', question_id)
             .single();
-        if (optErr || !opt)
-            return res.status(400).json({ error: 'Invalid option' });
-        is_correct = !!opt.is_correct;
-    }
-    else {
-        if (!text_answer)
-            return res.status(400).json({ error: 'text_answer required for SAQ' });
-        const { data: keys, error: kErr } = await exports.supabase
-            .from('saq_answer_keys')
-            .select('match_type, pattern, case_sensitive')
-            .eq('question_id', question_id);
-        if (kErr)
-            return res.status(500).json({ error: kErr.message });
-        const answer = String(text_answer || '');
-        is_correct = (keys || []).some((k) => {
-            const a = k.case_sensitive ? answer : answer.toLowerCase();
-            const p = k.case_sensitive ? k.pattern : String(k.pattern || '').toLowerCase();
-            if (k.match_type === 'exact')
-                return a === p;
-            if (k.match_type === 'contains')
-                return a.includes(p);
-            if (k.match_type === 'regex') {
-                try {
-                    return new RegExp(k.pattern, k.case_sensitive ? '' : 'i').test(answer);
-                }
-                catch {
-                    return false;
-                }
-            }
-            return false;
+        console.log('Question fetch result:', { data: q, error: qErr });
+        if (qErr) {
+            console.error('Error fetching question:', qErr);
+            return res.status(500).json({ error: 'Failed to fetch question' });
+        }
+        if (!q) {
+            console.error('No question found for ID:', question_id);
+            return res.status(404).json({ error: 'Question not found' });
+        }
+        console.log('Question data:', {
+            id: q.id,
+            type: q.type,
+            correct_answer: q.correct_answer,
+            explanation_l1_points: q.explanation_l1_points,
+            explanation_l2: q.explanation_l2,
+            explanation_eli5: q.explanation_eli5
         });
+        console.log('Processing answer validation...');
+        let is_correct = false;
+        if (q.type === 'MCQ') {
+            console.log('Processing MCQ answer...');
+            if (selected_option_id === undefined || selected_option_id === null)
+                return res.status(400).json({ error: 'selected_option_id required for MCQ' });
+            console.log('Raw options from DB:', q.options);
+            const optionsArray = Array.isArray(q.options) ? q.options : JSON.parse(q.options || '[]');
+            console.log('Parsed options array:', optionsArray);
+            if (selected_option_id < 0 || selected_option_id >= optionsArray.length) {
+                console.log('Invalid option index:', selected_option_id, 'Array length:', optionsArray.length);
+                return res.status(400).json({ error: 'Invalid option index' });
+            }
+            // Check if answer is correct
+            is_correct = selected_option_id === q.correct_answer;
+            console.log('Answer check: selected =', selected_option_id, 'correct =', q.correct_answer, 'is_correct =', is_correct);
+            // Set correct option for response
+            const correctOption = {
+                id: q.correct_answer,
+                label: String.fromCharCode(65 + q.correct_answer), // A, B, C, D, etc.
+                body: optionsArray[q.correct_answer]
+            };
+            console.log('Correct option:', correctOption);
+            req.correct_option = correctOption;
+        }
+        else {
+            if (!text_answer)
+                return res.status(400).json({ error: 'text_answer required for SAQ' });
+            const { data: keys, error: kErr } = await exports.supabase
+                .from('saq_answer_keys')
+                .select('match_type, pattern, case_sensitive')
+                .eq('question_id', question_id);
+            if (kErr)
+                return res.status(500).json({ error: kErr.message });
+            const answer = String(text_answer || '');
+            is_correct = (keys || []).some((k) => {
+                const a = k.case_sensitive ? answer : answer.toLowerCase();
+                const p = k.case_sensitive ? k.pattern : String(k.pattern || '').toLowerCase();
+                if (k.match_type === 'exact')
+                    return a === p;
+                if (k.match_type === 'contains')
+                    return a.includes(p);
+                if (k.match_type === 'regex') {
+                    try {
+                        return new RegExp(k.pattern, k.case_sensitive ? '' : 'i').test(answer);
+                    }
+                    catch {
+                        return false;
+                    }
+                }
+                return false;
+            });
+        }
+        const insertPayload = {
+            user_id: authUser.id,
+            question_id,
+            selected_option_id: selected_option_id ?? null,
+            text_answer: text_answer ?? null,
+            is_correct,
+            time_taken_ms: time_taken_ms ?? null,
+            confidence: confidence ?? null,
+            guessed: null,
+        };
+        const { error: insErr } = await exports.supabase.from('user_question_attempts').insert(insertPayload);
+        if (insErr)
+            return res.status(500).json({ error: insErr.message });
+        console.log('Processing explanations...');
+        let quickPoints = null;
+        if (q.explanation_l1_points) {
+            console.log('Raw explanation_l1_points:', q.explanation_l1_points);
+            console.log('Type of explanation_l1_points:', typeof q.explanation_l1_points);
+            try {
+                quickPoints = Array.isArray(q.explanation_l1_points)
+                    ? q.explanation_l1_points
+                    : JSON.parse(q.explanation_l1_points);
+                console.log('Parsed quick points:', quickPoints);
+            }
+            catch (e) {
+                console.warn('Failed to parse explanation_l1_points:', e);
+                quickPoints = null;
+            }
+        }
+        else {
+            console.log('No explanation_l1_points found in question data');
+        }
+        const responseData = {
+            is_correct,
+            correct_option: req.correct_option || null,
+            explanations: {
+                quick_points: quickPoints,
+                detailed: q.explanation_l2 || null,
+                eli5: q.explanation_eli5 || null,
+                visual: null,
+            },
+        };
+        console.log('=== RESPONSE DATA ===');
+        console.log('Full response:', JSON.stringify(responseData, null, 2));
+        res.json(responseData);
     }
-    const insertPayload = {
-        user_id: authUser.id,
-        question_id,
-        selected_option_id: selected_option_id ?? null,
-        text_answer: text_answer ?? null,
-        is_correct,
-        time_taken_ms: time_taken_ms ?? null,
-        confidence: confidence ?? null,
-        guessed: null,
-    };
-    const { error: insErr } = await exports.supabase.from('user_question_attempts').insert(insertPayload);
-    if (insErr)
-        return res.status(500).json({ error: insErr.message });
-    res.json({
-        is_correct,
-        explanations: {
-            quick: q.explanation_l1,
-            detailed: q.explanation_l2,
-            visual: null,
-        },
-    });
+    catch (error) {
+        console.error('Error in /qbank/practice/answer:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
 });
 app.listen(env_1.env.PORT, () => {
     console.log(`API listening on http://localhost:${env_1.env.PORT}`);

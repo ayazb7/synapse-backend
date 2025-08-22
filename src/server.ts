@@ -26,6 +26,18 @@ export const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
   },
 });
 
+// Admin client for server-side operations that bypass RLS
+export const supabaseAdmin = createClient(
+  env.SUPABASE_URL, 
+  env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY,
+  {
+    auth: {
+      persistSession: false,
+      detectSessionInUrl: false,
+    },
+  }
+);
+
 app.get('/health', (_req, res) => {
   res.json({ ok: true });
 });
@@ -50,6 +62,15 @@ app.get('/me', authMiddleware({ supabase }), async (req, res) => {
 
   if (error) {
     console.error('Error fetching user data:', error);
+    // If user doesn't exist in users table, create one or return auth user data
+    if (error.code === 'PGRST116') {
+      // No user found, return basic auth user data
+      const user = {
+        ...authUser,
+        username: authUser.user_metadata?.username || authUser.email?.split('@')[0] || 'User'
+      };
+      return res.json({ user });
+    }
     return res.status(500).json({ error: 'Failed to fetch user data' });
   }
 
@@ -90,20 +111,177 @@ app.get('/qbank/specialties', authMiddleware({ supabase }), async (req, res) => 
   res.json({ specialties: data ?? [] });
 });
 
+app.get('/qbank/specialty/:specialtyId/topics', authMiddleware({ supabase }), async (req, res) => {
+  const authUser = (req as any).user;
+  const { specialtyId } = req.params;
+  
+  if (!specialtyId) {
+    return res.status(400).json({ error: 'specialty_id is required' });
+  }
+
+  // Get topics for this specialty with question counts
+  const { data, error } = await supabase
+    .from('topics')
+    .select(`
+      id,
+      name,
+      specialty_id,
+      questions!inner(id)
+    `)
+    .eq('specialty_id', specialtyId)
+    .eq('questions.is_active', true);
+
+  if (error) {
+    console.error('Error fetching topics:', error);
+    return res.status(500).json({ error: error.message });
+  }
+
+  // Transform the data to include question counts
+  const topics = (data || []).map(topic => ({
+    id: topic.id,
+    name: topic.name,
+    specialty_id: topic.specialty_id,
+    question_count: topic.questions?.length || 0
+  }));
+
+  res.set({ 'Cache-Control': 'private, max-age=30' });
+  res.json({ topics });
+});
+
+app.get('/qbank/practice/session', authMiddleware({ supabase }), async (req, res) => {
+  const authUser = (req as any).user;
+  const specialtyId = req.query.specialty_id as string;
+  const topicIds = req.query.topic_ids as string; // comma-separated topic IDs
+  const numQuestions = parseInt(req.query.num_questions as string || '25');
+  
+  if (!specialtyId) return res.status(400).json({ error: 'specialty_id is required' });
+  if (!numQuestions || numQuestions < 1) return res.status(400).json({ error: 'num_questions must be a positive integer' });
+
+  console.log('Loading practice session:', { specialtyId, topicIds, numQuestions });
+
+  // Build the query
+  let query = supabase
+    .from('questions')
+    .select('id, topic_id, type, stem, options, correct_answer, explanation_l1_points, explanation_l2, explanation_eli5, topics!inner(specialty_id, name)')
+    .eq('topics.specialty_id', specialtyId)
+    .eq('is_active', true);
+
+  // Filter by specific topics if provided
+  if (topicIds && topicIds.trim()) {
+    const topicIdArray = topicIds.split(',').map(id => id.trim()).filter(Boolean);
+    if (topicIdArray.length > 0) {
+      query = query.in('topic_id', topicIdArray);
+    }
+  }
+
+  const { data: allQuestions, error: qErr } = await query.limit(500);
+
+  if (qErr) return res.status(500).json({ error: qErr.message });
+  
+  if (!allQuestions || allQuestions.length === 0) {
+    return res.json({ questions: [], total_available: 0 });
+  }
+
+  // Get user's attempted questions to prioritize unattempted ones
+  const { data: attempts, error: aErr } = await supabaseAdmin
+    .from('user_question_attempts')
+    .select('question_id')
+    .eq('user_id', authUser.id);
+  if (aErr) return res.status(500).json({ error: aErr.message });
+  
+  const attemptedIds = new Set((attempts ?? []).map((a: any) => a.question_id));
+  const unattempted = allQuestions.filter((q: any) => !attemptedIds.has(q.id));
+  const attempted = allQuestions.filter((q: any) => attemptedIds.has(q.id));
+
+  // Shuffle and select questions (prioritize unattempted)
+  const shuffleArray = (array: any[]) => {
+    const shuffled = [...array];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
+  };
+
+  const shuffledUnattempted = shuffleArray(unattempted);
+  const shuffledAttempted = shuffleArray(attempted);
+  const selectedQuestions = [...shuffledUnattempted, ...shuffledAttempted].slice(0, numQuestions);
+
+  // Format questions with options and explanations
+  const formattedQuestions = selectedQuestions.map((q: any) => {
+    let formattedOptions = [];
+    if (q.type === 'MCQ' && q.options) {
+      const optionsArray = Array.isArray(q.options) ? q.options : JSON.parse(q.options);
+      formattedOptions = optionsArray.map((option: string, index: number) => ({
+        id: index,
+        label: String.fromCharCode(65 + index),
+        body: option
+      }));
+    }
+
+    // Parse explanation_l1_points
+    let quickPoints = null;
+    if (q.explanation_l1_points) {
+      try {
+        quickPoints = Array.isArray(q.explanation_l1_points) 
+          ? q.explanation_l1_points 
+          : JSON.parse(q.explanation_l1_points);
+      } catch (e) {
+        console.warn('Failed to parse explanation_l1_points for question', q.id, ':', e);
+        quickPoints = null;
+      }
+    }
+
+    return {
+      id: q.id,
+      type: q.type,
+      stem: q.stem,
+      topic_name: q.topics?.name || 'Unknown Topic',
+      options: formattedOptions,
+      correct_answer: q.correct_answer,
+      explanations: {
+        quick_points: quickPoints,
+        detailed: q.explanation_l2 || null,
+        eli5: q.explanation_eli5 || null,
+        visual: null,
+      }
+    };
+  });
+
+  console.log(`Loaded ${formattedQuestions.length} questions for session`);
+
+  res.json({
+    questions: formattedQuestions,
+    total_available: allQuestions.length
+  });
+});
+
 app.get('/qbank/practice/next', authMiddleware({ supabase }), async (req, res) => {
   const authUser = (req as any).user;
   const specialtyId = req.query.specialty_id as string;
+  const topicIds = req.query.topic_ids as string; // comma-separated topic IDs
+  
   if (!specialtyId) return res.status(400).json({ error: 'specialty_id is required' });
 
-  const { data: qData, error: qErr } = await supabase
+  // Build the query
+  let query = supabase
     .from('questions')
-    .select('id, topic_id, type, stem, explanation_l1, explanation_l2, difficulty, time_limit_sec, topics!inner(specialty_id, name)')
+    .select('id, topic_id, type, stem, options, explanation_l1_points, explanation_l2, topics!inner(specialty_id, name)')
     .eq('topics.specialty_id', specialtyId)
-    .eq('is_active', true)
-    .limit(50);
+    .eq('is_active', true);
+
+  // Filter by specific topics if provided
+  if (topicIds && topicIds.trim()) {
+    const topicIdArray = topicIds.split(',').map(id => id.trim()).filter(Boolean);
+    if (topicIdArray.length > 0) {
+      query = query.in('topic_id', topicIdArray);
+    }
+  }
+
+  const { data: qData, error: qErr } = await query.limit(200);
 
   if (qErr) return res.status(500).json({ error: qErr.message });
-  const { data: attempts, error: aErr } = await supabase
+  const { data: attempts, error: aErr } = await supabaseAdmin
     .from('user_question_attempts')
     .select('question_id')
     .eq('user_id', authUser.id);
@@ -113,14 +291,17 @@ app.get('/qbank/practice/next', authMiddleware({ supabase }), async (req, res) =
   const chosen = available.length > 0 ? available[Math.floor(Math.random() * available.length)] : (qData ?? [])[Math.floor(Math.random() * (qData?.length || 1))];
   if (!chosen) return res.json({ question: null, options: [], progress: { completed: 0, total: 0 } });
 
-  const { data: options, error: oErr } = await supabase
-    .from('mcq_options')
-    .select('id, label, body')
-    .eq('question_id', chosen.id)
-    .order('label', { ascending: true });
-  if (oErr) return res.status(500).json({ error: oErr.message });
+  let formattedOptions = [];
+  if (chosen.type === 'MCQ' && chosen.options) {
+    const optionsArray = Array.isArray(chosen.options) ? chosen.options : JSON.parse(chosen.options);
+    formattedOptions = optionsArray.map((option: string, index: number) => ({
+      id: index,
+      label: String.fromCharCode(65 + index),
+      body: option
+    }));
+  }
 
-  const { data: prog, error: pErr } = await supabase
+  const { data: prog, error: pErr } = await supabaseAdmin
     .from('user_question_attempts')
     .select('question_id, questions!inner(topics!inner(specialty_id))')
     .eq('user_id', authUser.id)
@@ -135,95 +316,50 @@ app.get('/qbank/practice/next', authMiddleware({ supabase }), async (req, res) =
       id: chosen.id,
       type: chosen.type,
       stem: chosen.stem,
-      difficulty: chosen.difficulty,
-      time_limit_sec: chosen.time_limit_sec,
       topic_name: (chosen as any).topics?.name || 'Unknown Topic',
     },
-    options: options ?? [],
+    options: formattedOptions,
     progress: { completed, total },
   });
 });
 
-app.post('/qbank/practice/answer', authMiddleware({ supabase }), async (req, res) => {
-  const authUser = (req as any).user;
-  const { question_id, selected_option_id, text_answer, time_taken_ms, confidence } = req.body || {};
-  if (!question_id) return res.status(400).json({ error: 'question_id is required' });
+app.post('/qbank/practice/submit', authMiddleware({ supabase }), async (req, res) => {
+  try {
+    console.log('=== /qbank/practice/submit REQUEST ===');
+    const authUser = (req as any).user;
+    const { question_id, selected_option_id, text_answer, time_taken_ms, is_correct } = req.body || {};
+    
+    console.log('Request:', { question_id, selected_option_id, text_answer, is_correct });
+    
+    if (!question_id) return res.status(400).json({ error: 'question_id is required' });
+    if (is_correct === undefined || is_correct === null) return res.status(400).json({ error: 'is_correct is required' });
 
-  const { data: q, error: qErr } = await supabase
-    .from('questions')
-    .select('*')
-    .eq('id', question_id)
-    .single();
-  
-  console.log('Question data from DB:', q);
-  console.log('Available fields:', Object.keys(q || {}));
-  
-  if (qErr || !q) return res.status(404).json({ error: 'Question not found' });
+    // Store the user's attempt
+    const insertPayload: any = {
+      user_id: authUser.id,
+      question_id,
+      selected_option_id: null, // Don't store UUID anymore, we use indexes
+      text_answer: selected_option_id !== undefined ? selected_option_id?.toString() : (text_answer ?? null),
+      is_correct,
+      time_taken_ms: time_taken_ms ?? null,
+      confidence: null,
+      guessed: null,
+    };
+    
+    console.log('Insert payload:', insertPayload);
+    const { error: insErr } = await supabaseAdmin.from('user_question_attempts').insert(insertPayload);
+    if (insErr) {
+      console.error('Insert error:', insErr);
+      return res.status(500).json({ error: insErr.message });
+    }
 
-  let is_correct = false;
-  if (q.type === 'MCQ') {
-    if (!selected_option_id) return res.status(400).json({ error: 'selected_option_id required for MCQ' });
-    const { data: opt, error: optErr } = await supabase
-      .from('mcq_options')
-      .select('id, is_correct')
-      .eq('id', selected_option_id)
-      .eq('question_id', question_id)
-      .single();
-    if (optErr || !opt) return res.status(400).json({ error: 'Invalid option' });
-    is_correct = !!opt.is_correct;
-    const { data: correctOpt } = await supabase
-      .from('mcq_options')
-      .select('label, body')
-      .eq('question_id', question_id)
-      .eq('is_correct', true)
-      .single();
-    (req as any).correct_option = correctOpt || null;
-  } else {
-    if (!text_answer) return res.status(400).json({ error: 'text_answer required for SAQ' });
-    const { data: keys, error: kErr } = await supabase
-      .from('saq_answer_keys')
-      .select('match_type, pattern, case_sensitive')
-      .eq('question_id', question_id);
-    if (kErr) return res.status(500).json({ error: kErr.message });
-    const answer = String(text_answer || '');
-    is_correct = (keys || []).some((k: any) => {
-      const a = k.case_sensitive ? answer : answer.toLowerCase();
-      const p = k.case_sensitive ? k.pattern : String(k.pattern || '').toLowerCase();
-      if (k.match_type === 'exact') return a === p;
-      if (k.match_type === 'contains') return a.includes(p);
-      if (k.match_type === 'regex') {
-        try { return new RegExp(k.pattern, k.case_sensitive ? '' : 'i').test(answer); } catch { return false; }
-      }
-      return false;
-    });
+    console.log('Successfully saved user attempt');
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error in /qbank/practice/submit:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
-
-  const insertPayload: any = {
-    user_id: authUser.id,
-    question_id,
-    selected_option_id: selected_option_id ?? null,
-    text_answer: text_answer ?? null,
-    is_correct,
-    time_taken_ms: time_taken_ms ?? null,
-    confidence: confidence ?? null,
-    guessed: null,
-  };
-  const { error: insErr } = await supabase.from('user_question_attempts').insert(insertPayload);
-  if (insErr) return res.status(500).json({ error: insErr.message });
-
-  res.json({
-    is_correct,
-    correct_option: (req as any).correct_option || null,
-    explanations: {
-      quick: q.explanation_l1,
-      quick_points: q.explanation_l1_points || null,
-      detailed: q.explanation_l2 || null,
-      detailed_context: q.detailed_context || null,
-      detailed_pathophysiology: q.detailed_pathophysiology || null,
-      eli5: q.explanation_eli5 || null,
-      visual: null,
-    },
-  });
 });
 
 app.listen(env.PORT, () => {
