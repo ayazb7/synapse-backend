@@ -40,19 +40,18 @@ export function buildAuthRouter({ supabase }: BuildAuthRouterArgs) {
     if (error) return res.status(400).json({ error: error.message });
 
     if (data.session) {
-      const maxAge = remember ? 60 * 60 * 24 * 60 : undefined; // 60 days
-      res.cookie(env.ACCESS_COOKIE_NAME, data.session.access_token, {
+      const maxAge = remember ? 60 * 60 * 24 * 60 * 1000 : undefined; // 60 days in milliseconds
+      const isProduction = process.env.NODE_ENV === 'production';
+      const cookieOptions = {
         httpOnly: true,
-        sameSite: (env.COOKIE_SAMESITE as any) ?? 'lax',
-        secure: process.env.NODE_ENV === 'production',
+        sameSite: isProduction ? 'none' as const : 'lax' as const,
+        secure: isProduction,
         maxAge,
-      });
-      res.cookie(env.REFRESH_COOKIE_NAME, data.session.refresh_token, {
-        httpOnly: true,
-        sameSite: (env.COOKIE_SAMESITE as any) ?? 'lax',
-        secure: process.env.NODE_ENV === 'production',
-        maxAge,
-      });
+        domain: isProduction ? undefined : undefined, // Let browser handle domain
+      };
+      
+      res.cookie(env.ACCESS_COOKIE_NAME, data.session.access_token, cookieOptions);
+      res.cookie(env.REFRESH_COOKIE_NAME, data.session.refresh_token, cookieOptions);
     }
 
     return res.status(201).json({ user: data.user });
@@ -66,25 +65,32 @@ export function buildAuthRouter({ supabase }: BuildAuthRouterArgs) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return res.status(401).json({ error: error.message });
 
-    const maxAge = remember ? 60 * 60 * 24 * 60 : undefined; // 60 days
-    res.cookie(env.ACCESS_COOKIE_NAME, data.session.access_token, {
+    const maxAge = remember ? 60 * 60 * 24 * 60 * 1000 : undefined; // 60 days in milliseconds
+    const isProduction = process.env.NODE_ENV === 'production';
+    const cookieOptions = {
       httpOnly: true,
-      sameSite: (env.COOKIE_SAMESITE as any) ?? 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      sameSite: isProduction ? 'none' as const : 'lax' as const,
+      secure: isProduction,
       maxAge,
-    });
-    res.cookie(env.REFRESH_COOKIE_NAME, data.session.refresh_token, {
-      httpOnly: true,
-      sameSite: (env.COOKIE_SAMESITE as any) ?? 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      maxAge,
-    });
+      domain: isProduction ? undefined : undefined, // Let browser handle domain
+    };
+    
+    res.cookie(env.ACCESS_COOKIE_NAME, data.session.access_token, cookieOptions);
+    res.cookie(env.REFRESH_COOKIE_NAME, data.session.refresh_token, cookieOptions);
     return res.json({ user: data.user });
   });
 
   router.post('/signout', async (_req, res) => {
-    res.clearCookie(env.ACCESS_COOKIE_NAME);
-    res.clearCookie(env.REFRESH_COOKIE_NAME);
+    const isProduction = process.env.NODE_ENV === 'production';
+    const clearOptions = {
+      httpOnly: true,
+      sameSite: isProduction ? 'none' as const : 'lax' as const,
+      secure: isProduction,
+      domain: isProduction ? undefined : undefined,
+    };
+    
+    res.clearCookie(env.ACCESS_COOKIE_NAME, clearOptions);
+    res.clearCookie(env.REFRESH_COOKIE_NAME, clearOptions);
     return res.status(204).send();
   });
 
@@ -103,19 +109,18 @@ export function buildAuthRouter({ supabase }: BuildAuthRouterArgs) {
     const { data, error } = await supabase.auth.getUser(access_token);
     if (error || !data.user) return res.status(401).json({ error: 'Invalid tokens' });
 
-    const maxAge = remember ? 60 * 60 * 24 * 60 : undefined;
-    res.cookie(env.ACCESS_COOKIE_NAME, access_token, {
+    const maxAge = remember ? 60 * 60 * 24 * 60 * 1000 : undefined; // 60 days in milliseconds
+    const isProduction = process.env.NODE_ENV === 'production';
+    const cookieOptions = {
       httpOnly: true,
-      sameSite: (env.COOKIE_SAMESITE as any) ?? 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      sameSite: isProduction ? 'none' as const : 'lax' as const,
+      secure: isProduction,
       maxAge,
-    });
-    res.cookie(env.REFRESH_COOKIE_NAME, refresh_token, {
-      httpOnly: true,
-      sameSite: (env.COOKIE_SAMESITE as any) ?? 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      maxAge,
-    });
+      domain: isProduction ? undefined : undefined, // Let browser handle domain
+    };
+    
+    res.cookie(env.ACCESS_COOKIE_NAME, access_token, cookieOptions);
+    res.cookie(env.REFRESH_COOKIE_NAME, refresh_token, cookieOptions);
     return res.status(200).json({ ok: true });
   });
 

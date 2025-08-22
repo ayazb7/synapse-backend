@@ -14,8 +14,26 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(
   cors({
-    origin: env.CORS_ORIGIN ?? true,
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+      
+      if (env.CORS_ORIGIN) {
+        // In production, check against allowed origins
+        const allowedOrigins = env.CORS_ORIGIN.split(',').map(o => o.trim());
+        if (allowedOrigins.includes(origin)) {
+          return callback(null, true);
+        } else {
+          return callback(new Error('Not allowed by CORS'));
+        }
+      } else {
+        // In development, allow all origins
+        return callback(null, true);
+      }
+    },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
   })
 );
 
@@ -45,44 +63,61 @@ app.get('/health', (_req, res) => {
 app.use('/auth', buildAuthRouter({ supabase }));
 
 app.get('/me', authMiddleware({ supabase }), async (req, res) => {
-  res.set({
-    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, private',
-    'Pragma': 'no-cache',
-    'Expires': '0',
-    'Surrogate-Control': 'no-store',
-    'Vary': 'Cookie, Origin',
-  });
-  const authUser = (req as any).user;
-  
-  const { data: userData, error } = await supabase
-    .from('users')
-    .select('id, email, username, created_at, updated_at')
-    .eq('id', authUser.id)
-    .single();
-
-  if (error) {
-    console.error('Error fetching user data:', error);
-    // If user doesn't exist in users table, create one or return auth user data
-    if (error.code === 'PGRST116') {
-      // No user found, return basic auth user data
-      const user = {
-        ...authUser,
-        username: authUser.user_metadata?.username || authUser.email?.split('@')[0] || 'User'
-      };
-      return res.json({ user });
+  try {
+    res.set({
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, private',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+      'Surrogate-Control': 'no-store',
+      'Vary': 'Cookie, Origin',
+    });
+    
+    const authUser = (req as any).user;
+    console.log('Auth user from middleware:', authUser?.id);
+    
+    if (!authUser || !authUser.id) {
+      console.error('No auth user found in request');
+      return res.status(401).json({ error: 'Authentication required' });
     }
-    return res.status(500).json({ error: 'Failed to fetch user data' });
+    
+    const { data: userData, error } = await supabase
+      .from('users')
+      .select('id, email, username, created_at, updated_at')
+      .eq('id', authUser.id)
+      .single();
+
+    if (error) {
+      console.error('Error fetching user data:', error);
+      // If user doesn't exist in users table, create one or return auth user data
+      if (error.code === 'PGRST116') {
+        console.log('User not found in users table, returning auth user data');
+        // No user found, return basic auth user data
+        const user = {
+          id: authUser.id,
+          email: authUser.email,
+          username: authUser.user_metadata?.username || authUser.email?.split('@')[0] || 'User',
+          created_at: authUser.created_at,
+          updated_at: authUser.updated_at
+        };
+        return res.json({ user });
+      }
+      return res.status(500).json({ error: 'Failed to fetch user data' });
+    }
+
+    const user = {
+      id: authUser.id,
+      email: userData.email || authUser.email,
+      username: userData.username || authUser.user_metadata?.username || authUser.email?.split('@')[0] || 'User',
+      created_at: userData.created_at || authUser.created_at,
+      updated_at: userData.updated_at || authUser.updated_at
+    };
+
+    console.log('Returning user data:', { id: user.id, email: user.email });
+    res.json({ user });
+  } catch (error) {
+    console.error('Unexpected error in /me endpoint:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
-
-  const user = {
-    ...authUser,
-    email: userData.email,
-    username: userData.username,
-    created_at: userData.created_at,
-    updated_at: userData.updated_at
-  };
-
-  res.json({ user });
 });
 
 app.get('/qbank/summary', authMiddleware({ supabase }), async (req, res) => {

@@ -15,7 +15,7 @@ const EnvSchema = z.object({
   COOKIE_SAMESITE: z
     .enum(['lax', 'strict', 'none'])
     .optional()
-    .default('lax'),
+    .default(process.env.NODE_ENV === 'production' ? 'none' : 'lax'),
 });
 
 const parsed = EnvSchema.safeParse(process.env);
