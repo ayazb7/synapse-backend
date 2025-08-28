@@ -9,8 +9,17 @@ type BuildAuthMiddlewareArgs = {
 export function authMiddleware({ supabase }: BuildAuthMiddlewareArgs) {
   return async function ensureAuth(req: Request, res: Response, next: NextFunction) {
     try {
-      const accessToken = req.cookies?.[env.ACCESS_COOKIE_NAME] as string | undefined;
-      console.log('Auth middleware - Access token present:', !!accessToken);
+      const cookieAccessToken = req.cookies?.[env.ACCESS_COOKIE_NAME] as string | undefined;
+      const authHeader = req.header('authorization') || req.header('Authorization');
+      const headerAccessToken = authHeader?.toLowerCase().startsWith('bearer ')
+        ? authHeader.slice(7).trim()
+        : undefined;
+
+      const accessToken = headerAccessToken || cookieAccessToken;
+      console.log('Auth middleware - Access token present (cookie/header):', !!cookieAccessToken, !!headerAccessToken);
+      if (authHeader) {
+        console.log('Auth middleware - Authorization header detected');
+      }
       console.log('Auth middleware - Cookies:', Object.keys(req.cookies || {}));
       
       if (!accessToken) {
