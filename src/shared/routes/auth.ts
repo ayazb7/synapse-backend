@@ -54,7 +54,11 @@ export function buildAuthRouter({ supabase }: BuildAuthRouterArgs) {
       res.cookie(env.REFRESH_COOKIE_NAME, data.session.refresh_token, cookieOptions);
     }
 
-    return res.status(201).json({ user: data.user });
+    return res.status(201).json({
+      user: data.user,
+      access_token: data.session?.access_token,
+      refresh_token: data.session?.refresh_token,
+    });
   });
 
   router.post('/signin', async (req, res) => {
@@ -77,7 +81,11 @@ export function buildAuthRouter({ supabase }: BuildAuthRouterArgs) {
     
     res.cookie(env.ACCESS_COOKIE_NAME, data.session.access_token, cookieOptions);
     res.cookie(env.REFRESH_COOKIE_NAME, data.session.refresh_token, cookieOptions);
-    return res.json({ user: data.user });
+    return res.json({
+      user: data.user,
+      access_token: data.session.access_token,
+      refresh_token: data.session.refresh_token,
+    });
   });
 
   router.post('/signout', async (_req, res) => {
