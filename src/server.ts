@@ -197,7 +197,7 @@ app.get('/qbank/practice/session', authMiddleware({ supabase }), async (req, res
   // Build the query
   let query = supabase
     .from('questions')
-    .select('id, topic_id, type, stem, options, correct_answer, explanation_l1_points, explanation_l2, explanation_eli5, topics!inner(specialty_id, name)')
+    .select('id, topic_id, type, stem, options, correct_answer, explanation_l1_points, explanation_points_by_option, explanation_l2, explanation_eli5, topics!inner(specialty_id, name)')
     .eq('topics.specialty_id', specialtyId)
     .eq('is_active', true);
 
@@ -267,6 +267,18 @@ app.get('/qbank/practice/session', authMiddleware({ supabase }), async (req, res
       }
     }
 
+    // Parse explanation_points_by_option
+    let pointsByOption: any = null;
+    const rawPbo = (q as any).explanation_points_by_option;
+    if (rawPbo) {
+      try {
+        pointsByOption = typeof rawPbo === 'object' ? rawPbo : JSON.parse(rawPbo);
+      } catch (e) {
+        console.warn('Failed to parse explanation_points_by_option for question', q.id, ':', e);
+        pointsByOption = null;
+      }
+    }
+
     return {
       id: q.id,
       type: q.type,
@@ -276,6 +288,7 @@ app.get('/qbank/practice/session', authMiddleware({ supabase }), async (req, res
       correct_answer: q.correct_answer,
       explanations: {
         quick_points: quickPoints,
+        points_by_option: pointsByOption,
         detailed: q.explanation_l2 || null,
         eli5: q.explanation_eli5 || null,
         visual: null,
@@ -301,7 +314,7 @@ app.get('/qbank/practice/next', authMiddleware({ supabase }), async (req, res) =
   // Build the query
   let query = supabase
     .from('questions')
-    .select('id, topic_id, type, stem, options, explanation_l1_points, explanation_l2, topics!inner(specialty_id, name)')
+    .select('id, topic_id, type, stem, options, explanation_l1_points, explanation_points_by_option, explanation_l2, topics!inner(specialty_id, name)')
     .eq('topics.specialty_id', specialtyId)
     .eq('is_active', true);
 
@@ -393,6 +406,127 @@ app.post('/qbank/practice/submit', authMiddleware({ supabase }), async (req, res
     res.json({ success: true });
   } catch (error) {
     console.error('Error in /qbank/practice/submit:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ==== Question Discussions ====
+// List comments for a question (flat list with optional parent_id). Sorted oldest first.
+app.get('/qbank/questions/:questionId/comments', authMiddleware({ supabase }), async (req, res) => {
+  try {
+    const authUser = (req as any).user;
+    const { questionId } = req.params as { questionId: string };
+    if (!questionId) return res.status(400).json({ error: 'questionId is required' });
+
+    const { data, error } = await supabaseAdmin.rpc('get_question_comments', { p_user_id: authUser.id, p_question_id: questionId });
+    if (error) return res.status(500).json({ error: error.message });
+
+    const comments = (data || []).map((c: any) => ({
+      id: c.id,
+      question_id: c.question_id,
+      user: { id: c.user_id },
+      parent_id: c.parent_id,
+      content: c.content,
+      created_at: c.created_at,
+      updated_at: c.updated_at,
+      like_count: c.like_count || 0,
+      liked: !!c.liked,
+      reply_count: c.reply_count || 0,
+    }));
+
+    res.set({ 'Cache-Control': 'private, max-age=5' });
+    res.json({ comments });
+  } catch (error) {
+    console.error('Error fetching comments:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Create a new comment for a question
+app.post('/qbank/questions/:questionId/comments', authMiddleware({ supabase }), async (req, res) => {
+  try {
+    const authUser = (req as any).user;
+    const { questionId } = req.params as { questionId: string };
+    const { content, parent_id } = req.body || {};
+
+    if (!questionId) return res.status(400).json({ error: 'questionId is required' });
+    if (typeof content !== 'string' || content.trim().length === 0) {
+      return res.status(400).json({ error: 'content is required' });
+    }
+    if (content.length > 4000) {
+      return res.status(400).json({ error: 'content too long' });
+    }
+
+    const insertPayload: any = {
+      question_id: questionId,
+      user_id: authUser.id,
+      content: content.trim(),
+      parent_id: parent_id || null,
+    };
+
+    const { data, error } = await supabaseAdmin
+      .from('question_comments')
+      .insert(insertPayload)
+      .select('id, question_id, user_id, parent_id, content, created_at, updated_at')
+      .single();
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    res.status(201).json({ comment: data });
+  } catch (error) {
+    console.error('Error creating comment:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// List replies for a comment
+app.get('/qbank/comments/:commentId/replies', authMiddleware({ supabase }), async (req, res) => {
+  try {
+    const authUser = (req as any).user;
+    const { commentId } = req.params as { commentId: string };
+    if (!commentId) return res.status(400).json({ error: 'commentId is required' });
+    const { data, error } = await supabaseAdmin.rpc('get_comment_replies', { p_user_id: authUser.id, p_parent_id: commentId });
+    if (error) return res.status(500).json({ error: error.message });
+    const replies = (data || []).map((c: any) => ({
+      id: c.id,
+      question_id: c.question_id,
+      user: { id: c.user_id },
+      parent_id: c.parent_id,
+      content: c.content,
+      created_at: c.created_at,
+      updated_at: c.updated_at,
+      like_count: c.like_count || 0,
+      liked: !!c.liked,
+    }));
+    res.json({ replies });
+  } catch (error) {
+    console.error('Error fetching replies:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Toggle like on a comment
+app.post('/qbank/comments/:commentId/like', authMiddleware({ supabase }), async (req, res) => {
+  try {
+    const authUser = (req as any).user;
+    const { commentId } = req.params as { commentId: string };
+    if (!commentId) return res.status(400).json({ error: 'commentId is required' });
+
+    // Try insert; if conflict, delete to toggle
+    const { error: insErr } = await supabaseAdmin.from('question_comment_likes').insert({ user_id: authUser.id, comment_id: commentId });
+    if (insErr && !String(insErr.message).includes('duplicate key')) {
+      console.error('Like insert error:', insErr);
+      return res.status(500).json({ error: insErr.message });
+    }
+    if (insErr) {
+      // Already liked -> unlike
+      const { error: delErr } = await supabaseAdmin.from('question_comment_likes').delete().eq('user_id', authUser.id).eq('comment_id', commentId);
+      if (delErr) return res.status(500).json({ error: delErr.message });
+      return res.json({ liked: false });
+    }
+    res.json({ liked: true });
+  } catch (error) {
+    console.error('Error toggling like:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

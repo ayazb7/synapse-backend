@@ -5,6 +5,15 @@ gcloud run deploy synapse-backend \
   --platform managed \
   --region europe-west1 \
   --allow-unauthenticated \
-  --set-env-vars "SUPABASE_URL=https://zjtkzigulhvmegmsfkol.supabase.co,SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpqdGt6aWd1bGh2bWVnbXNma29sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ4NjQ3NjQsImV4cCI6MjA3MDQ0MDc2NH0.YJI4ny8NGBIj1epWsg8fHvNW5F2R1VJFgVXxxs2Mqi4',CORS_ORIGIN=https://www.edusynapseuk.org,FRONTEND_URL=https://www.edusynapseuk.org,ACCESS_COOKIE_NAME=sb-access-token,REFRESH_COOKIE_NAME=sb-refresh-token,NODE_ENV=production,SUPABASE_SERVICE_ROLE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpqdGt6aWd1bGh2bWVnbXNma29sIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NDg2NDc2NCwiZXhwIjoyMDcwNDQwNzY0fQ.uyJQVRiTLI6L89_bzTSiDamJi-wrLoFDQQUzUwKv_N0'"
+  --set-env-vars "\
+SUPABASE_URL=https://zjtkzigulhvmegmsfkol.supabase.co,\
+SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpqdGt6aWd1bGh2bWVnbXNma29sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ4NjQ3NjQsImV4cCI6MjA3MDQ0MDc2NH0.YJI4ny8NGBIj1epWsg8fHvNW5F2R1VJFgVXxxs2Mqi4,\
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpqdGt6aWd1bGh2bWVnbXNma29sIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NDg2NDc2NCwiZXhwIjoyMDcwNDQwNzY0fQ.uyJQVRiTLI6L89_bzTSiDamJi-wrLoFDQQUzUwKv_N0,\
+CORS_ORIGIN=https://www.edusynapseuk.org,\
+FRONTEND_URL=https://www.edusynapseuk.org,\
+ACCESS_COOKIE_NAME=sb-access-token,\
+REFRESH_COOKIE_NAME=sb-refresh-token,\
+COOKIE_SAMESITE=none,\
+NODE_ENV=production"
 
 gcloud run deploy synapse-backend --image gcr.io/edusynapse-468717/synapse-backend --platform managed --region europe-west1 --allow-unauthenticated
