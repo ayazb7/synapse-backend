@@ -183,6 +183,145 @@ app.get('/qbank/specialty/:specialtyId/topics', authMiddleware({ supabase }), as
   res.json({ topics });
 });
 
+// ==== Textbook API ====
+// Outline: specialties -> topics -> page -> top-level sections
+app.get('/textbook/outline', authMiddleware({ supabase }), async (_req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('v_textbook_outline')
+      .select('*');
+    if (error) return res.status(500).json({ error: error.message });
+
+    // Group by specialty and topic for frontend convenience
+    const map: any = {};
+    for (const row of data || []) {
+      const sId = row.specialty_id;
+      if (!map[sId]) {
+        map[sId] = {
+          specialty_id: row.specialty_id,
+          specialty_name: row.specialty_name,
+          specialty_slug: row.specialty_slug,
+          topics: {},
+        };
+      }
+      const tId = row.topic_id;
+      if (!map[sId].topics[tId]) {
+        map[sId].topics[tId] = {
+          topic_id: row.topic_id,
+          topic_name: row.topic_name,
+          topic_slug: row.topic_slug,
+          page: row.page_id ? {
+            page_id: row.page_id,
+            page_title: row.page_title,
+            page_slug: row.page_slug,
+            page_status: row.page_status,
+            sections: [],
+          } : null,
+        };
+      }
+      if (row.section_id && map[sId].topics[tId].page) {
+        map[sId].topics[tId].page.sections.push({
+          section_id: row.section_id,
+          title: row.section_title,
+          anchor: row.section_anchor,
+          section_type: row.section_type,
+          position: row.section_position,
+        });
+      }
+    }
+
+    const specialties = Object.values(map).map((s: any) => ({
+      ...s,
+      topics: Object.values(s.topics),
+    }));
+
+    res.set({ 'Cache-Control': 'private, max-age=15' });
+    res.json({ specialties });
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'Failed to load outline' });
+  }
+});
+
+// Get all topics for a specialty with textbook pages
+app.get('/textbook/specialty/:slug', authMiddleware({ supabase }), async (req, res) => {
+  const { slug } = req.params as { slug: string };
+  // Find specialty by slug
+  const { data: spec, error: sErr } = await supabase
+    .from('specialties')
+    .select('id, name, slug, icon_name, icon_color, icon_bg_start, icon_bg_end')
+    .eq('slug', slug)
+    .single();
+  if (sErr) return res.status(404).json({ error: 'Specialty not found' });
+
+  const { data: topics, error } = await supabase
+    .from('topics')
+    .select('id, name, slug, description, textbook_pages(id, title, slug, status)')
+    .eq('specialty_id', spec.id)
+    .order('name');
+  if (error) return res.status(500).json({ error: error.message });
+
+  const normalized = (topics || []).map((t: any) => ({
+    ...t,
+    has_page: Array.isArray(t.textbook_pages) ? t.textbook_pages.length > 0 : !!t.textbook_pages,
+  }));
+
+  res.json({ specialty: spec, topics: normalized });
+});
+
+// Page content for a topic by slug
+app.get('/textbook/:topicSlug', authMiddleware({ supabase }), async (req, res) => {
+  const { topicSlug } = req.params as { topicSlug: string };
+  // Locate topic and page
+  const { data: topic, error: tErr } = await supabase
+    .from('topics')
+    .select('id, name, slug, specialty_id, specialties:specialty_id(name, slug)')
+    .eq('slug', topicSlug)
+    .single();
+  if (tErr) return res.status(404).json({ error: 'Topic not found' });
+
+  const { data: page, error: pErr } = await supabase
+    .from('textbook_pages')
+    .select('id, title, slug, summary, status')
+    .eq('topic_id', (topic as any).id)
+    .single();
+  if (pErr) return res.status(404).json({ error: 'Textbook page not found' });
+
+  // Sections and blocks
+  const { data: sections, error: sErr2 } = await supabase
+    .from('textbook_sections')
+    .select('id, parent_section_id, title, anchor_slug, section_type, position')
+    .eq('page_id', page.id)
+    .order('position');
+  if (sErr2) return res.status(500).json({ error: sErr2.message });
+
+  const sectionIds = (sections || []).map((s: any) => s.id);
+  let blocks: any[] = [];
+  if (sectionIds.length > 0) {
+    const { data: bData, error: bErr } = await supabase
+      .from('textbook_blocks')
+      .select('id, section_id, block_type, position, content, data')
+      .in('section_id', sectionIds)
+      .order('position');
+    if (bErr) return res.status(500).json({ error: bErr.message });
+    blocks = bData || [];
+  }
+
+  const { data: citations, error: cErr } = await supabase
+    .from('textbook_citations')
+    .select('id, section_id, citation_key, label, source_type, authors, year, publisher, url, accessed_on, raw_citation, position')
+    .eq('page_id', page.id)
+    .order('position');
+  if (cErr) return res.status(500).json({ error: cErr.message });
+
+  const { data: tags } = await supabase
+    .from('textbook_page_tags')
+    .select('tag')
+    .eq('page_id', page.id);
+
+  res.set({ 'Cache-Control': 'private, max-age=30' });
+  res.json({ topic, page, sections: sections || [], blocks, citations: citations || [], tags: (tags || []).map((t: any) => t.tag) });
+});
+
 app.get('/qbank/practice/session', authMiddleware({ supabase }), async (req, res) => {
   const authUser = (req as any).user;
   const specialtyId = req.query.specialty_id as string;
