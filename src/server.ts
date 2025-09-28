@@ -510,6 +510,32 @@ app.get('/qbank/practice/next', authMiddleware({ supabase }), async (req, res) =
   });
 });
 
+app.get('/reference-ranges', authMiddleware({ supabase }), async (_req, res) => {
+  try {
+    const [gRes, iRes] = await Promise.all([
+      supabase.from('reference_range_groups').select('id, title, group_order').order('group_order', { ascending: true }),
+      supabase.from('reference_range_items').select('group_id, analyte, unit, population, value_text, item_order').order('item_order', { ascending: true })
+    ]);
+
+    if (gRes.error) return res.status(500).json({ error: gRes.error.message });
+    if (iRes.error) return res.status(500).json({ error: iRes.error.message });
+
+    const groupIdToItems: Record<string, any[]> = {};
+    for (const it of iRes.data || []) {
+      const key = String(it.group_id);
+      if (!groupIdToItems[key]) groupIdToItems[key] = [];
+      groupIdToItems[key].push({ analyte: it.analyte, unit: it.unit, population: it.population, value_text: it.value_text });
+    }
+
+    const groups = (gRes.data || []).map((g: any) => ({ id: g.id, title: g.title, items: groupIdToItems[String(g.id)] || [] }));
+
+    res.set({ 'Cache-Control': 'private, max-age=300' });
+    res.json({ groups });
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'Failed to load reference ranges' });
+  }
+});
+
 app.post('/qbank/practice/submit', authMiddleware({ supabase }), async (req, res) => {
   try {
     console.log('=== /qbank/practice/submit REQUEST ===');
