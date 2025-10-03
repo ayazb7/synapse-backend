@@ -60,7 +60,7 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true });
 });
 
-app.use('/auth', buildAuthRouter({ supabase }));
+app.use('/auth', buildAuthRouter({ supabase, supabaseAdmin }));
 
 app.get('/me', authMiddleware({ supabase }), async (req, res) => {
   try {
@@ -88,10 +88,8 @@ app.get('/me', authMiddleware({ supabase }), async (req, res) => {
 
     if (error) {
       console.error('Error fetching user data:', error);
-      // If user doesn't exist in users table, create one or return auth user data
       if (error.code === 'PGRST116') {
         console.log('User not found in users table, returning auth user data');
-        // No user found, return basic auth user data
         const user = {
           id: authUser.id,
           email: authUser.email,
@@ -117,6 +115,89 @@ app.get('/me', authMiddleware({ supabase }), async (req, res) => {
   } catch (error) {
     console.error('Unexpected error in /me endpoint:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+app.get('/dashboard/summary', authMiddleware({ supabase }), async (req, res) => {
+  try {
+    const authUser = (req as any).user;
+
+
+    const startOfDay = new Date();
+    startOfDay.setUTCHours(0, 0, 0, 0);
+    const endOfDay = new Date();
+    endOfDay.setUTCHours(23, 59, 59, 999);
+
+    const { data: todaysAttempts, error: attemptsErr } = await supabaseAdmin
+      .from('user_question_attempts')
+      .select('attempted_at, time_taken_ms')
+      .eq('user_id', authUser.id)
+      .gte('attempted_at', startOfDay.toISOString())
+      .lte('attempted_at', endOfDay.toISOString());
+    if (attemptsErr) return res.status(500).json({ error: attemptsErr.message });
+
+    const questionsToday = todaysAttempts?.length || 0;
+
+    let timeTodayMs = 0;
+    for (const a of todaysAttempts || []) {
+      const ms = (a as any).time_taken_ms;
+      timeTodayMs += (typeof ms === 'number' && ms >= 0) ? ms : 60000;
+    }
+
+    const since = new Date();
+    since.setUTCDate(since.getUTCDate() - 29);
+    since.setUTCHours(0,0,0,0);
+    const { data: recentAttempts, error: recentErr } = await supabaseAdmin
+      .from('user_question_attempts')
+      .select('attempted_at')
+      .eq('user_id', authUser.id)
+      .gte('attempted_at', since.toISOString());
+    if (recentErr) return res.status(500).json({ error: recentErr.message });
+    const daysWithActivity = new Set<string>();
+    for (const a of recentAttempts || []) {
+      const d = new Date((a as any).attempted_at);
+      const key = `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}`;
+      daysWithActivity.add(key);
+    }
+    // Compute streak ending today
+    let streak = 0;
+    for (let i = 0; i < 365; i++) {
+      const d = new Date();
+      d.setUTCDate(d.getUTCDate() - i);
+      d.setUTCHours(0,0,0,0);
+      const key = `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}`;
+      if (daysWithActivity.has(key)) streak += 1; else break;
+    }
+
+    const { data: lastAttempt, error: lastErr } = await supabaseAdmin
+      .from('user_question_attempts')
+      .select('attempted_at, questions!inner(topics!inner(specialty_id))')
+      .eq('user_id', authUser.id)
+      .order('attempted_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (lastErr && lastErr.code !== 'PGRST116') return res.status(500).json({ error: lastErr.message });
+    let lastSpecialtyId: string | null = null;
+    let lastSpecialtyName: string | null = null;
+    const topics = (lastAttempt as any)?.questions?.topics;
+    if (topics && topics.specialty_id) {
+      lastSpecialtyId = topics.specialty_id;
+    }
+    if (lastSpecialtyId) {
+      const { data: spec, error: sErr } = await supabase.from('specialties').select('id,name,slug').eq('id', lastSpecialtyId).single();
+      if (!sErr && spec) {
+        lastSpecialtyName = (spec as any).name || null;
+      }
+    }
+
+    res.json({
+      study_streak_days: streak,
+      time_today_minutes: Math.round(timeTodayMs / 60000),
+      questions_today: questionsToday,
+      last_specialty: lastSpecialtyId ? { id: lastSpecialtyId, name: lastSpecialtyName } : null,
+      targets: { time_minutes: 180, questions: 30 },
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'Failed to load dashboard summary' });
   }
 });
 
@@ -181,6 +262,55 @@ app.get('/qbank/specialty/:specialtyId/topics', authMiddleware({ supabase }), as
 
   res.set({ 'Cache-Control': 'private, max-age=30' });
   res.json({ topics });
+});
+
+// 30-day performance trend for dashboard
+app.get('/qbank/performance/trend', authMiddleware({ supabase }), async (req, res) => {
+  try {
+    const authUser = (req as any).user;
+
+    const since = new Date();
+    since.setUTCHours(0,0,0,0);
+    since.setUTCDate(since.getUTCDate() - 29);
+
+    const { data, error } = await supabaseAdmin
+      .from('user_question_attempts')
+      .select('attempted_at, is_correct, time_taken_ms')
+      .eq('user_id', authUser.id)
+      .gte('attempted_at', since.toISOString());
+    if (error) return res.status(500).json({ error: error.message });
+
+    const bucketMap: Record<string, { total: number; correct: number; timeSum: number; timeCount: number } > = {};
+    for (const a of data || []) {
+      const d = new Date((a as any).attempted_at);
+      const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+      if (!bucketMap[key]) bucketMap[key] = { total: 0, correct: 0, timeSum: 0, timeCount: 0 };
+      bucketMap[key].total += 1;
+      if ((a as any).is_correct) bucketMap[key].correct += 1;
+      const ms = (a as any).time_taken_ms;
+      if (typeof ms === 'number' && ms >= 0) {
+        bucketMap[key].timeSum += ms;
+        bucketMap[key].timeCount += 1;
+      }
+    }
+
+    const days: Array<{ date: string; accuracy_pct: number | null; avg_time_ms: number | null }> = [];
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date();
+      d.setUTCHours(0,0,0,0);
+      d.setUTCDate(d.getUTCDate() - i);
+      const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+      const b = bucketMap[key];
+      const accuracy = b && b.total > 0 ? Math.round((b.correct / b.total) * 100) : null;
+      const avg = b && b.timeCount > 0 ? Math.round(b.timeSum / b.timeCount) : null;
+      days.push({ date: key, accuracy_pct: accuracy, avg_time_ms: avg });
+    }
+
+    res.set({ 'Cache-Control': 'private, max-age=60' });
+    res.json({ days });
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'Failed to load performance trend' });
+  }
 });
 
 // ==== Textbook API ====

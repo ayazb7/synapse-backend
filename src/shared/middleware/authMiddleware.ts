@@ -15,7 +15,7 @@ export function authMiddleware({ supabase }: BuildAuthMiddlewareArgs) {
         ? authHeader.slice(7).trim()
         : undefined;
 
-      const accessToken = headerAccessToken || cookieAccessToken;
+      const accessToken = cookieAccessToken || headerAccessToken;
       console.log('Auth middleware - Access token present (cookie/header):', !!cookieAccessToken, !!headerAccessToken);
       if (authHeader) {
         console.log('Auth middleware - Authorization header detected');

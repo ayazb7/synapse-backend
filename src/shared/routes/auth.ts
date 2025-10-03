@@ -5,6 +5,7 @@ import { env } from '../env';
 
 type BuildAuthRouterArgs = {
   supabase: SupabaseClient;
+  supabaseAdmin: SupabaseClient;
 };
 
 const SignupSchema = z.object({
@@ -20,13 +21,22 @@ const SigninSchema = z.object({
   remember: z.boolean().optional().default(false),
 });
 
-export function buildAuthRouter({ supabase }: BuildAuthRouterArgs) {
+export function buildAuthRouter({ supabase, supabaseAdmin }: BuildAuthRouterArgs) {
   const router = Router();
 
   router.post('/signup', async (req, res) => {
     const parse = SignupSchema.safeParse(req.body);
     if (!parse.success) return res.status(400).json({ error: parse.error.flatten() });
     const { email, password, username, remember } = parse.data;
+
+    try {
+      const existingRes: any = await (supabaseAdmin as any).auth.admin.getUserByEmail(email);
+      const existingUser = existingRes?.data?.user;
+      if (existingUser) {
+        return res.status(409).json({ error: 'An account with this email already exists. Please sign in instead.' });
+      }
+    } catch (e) {
+    }
 
     const options: any = { data: { username } };
     if (env.FRONTEND_URL) {
@@ -37,7 +47,18 @@ export function buildAuthRouter({ supabase }: BuildAuthRouterArgs) {
       password,
       options,
     });
-    if (error) return res.status(400).json({ error: error.message });
+    if (error) {
+      const message = String(error.message || '').toLowerCase();
+      if (message.includes('already registered') || message.includes('user already')) {
+        return res.status(409).json({ error: 'An account with this email already exists. Please sign in instead.' });
+      }
+      return res.status(400).json({ error: error.message });
+    }
+
+    const identities = (data as any)?.user?.identities;
+    if (Array.isArray(identities) && identities.length === 0) {
+      return res.status(409).json({ error: 'An account with this email already exists. Please sign in instead.' });
+    }
 
     if (data.session) {
       const maxAge = remember ? 60 * 60 * 24 * 60 * 1000 : undefined; // 60 days in milliseconds
