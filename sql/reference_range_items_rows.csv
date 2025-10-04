@@ -1,0 +1,84 @@
+id,group_id,analyte,unit,population,value_text,item_order
+1,1,D-dimer,µg/mL FEU,general,<0.5,5
+2,1,Fibrinogen,g/L,general,1.5–4.0,4
+3,1,aPTT,s,general,25–35,3
+4,1,INR,,general,0.8–1.2 (therapeutic: 2.0–3.0; higher for mechanical valves),2
+5,1,PT,s,general,11–14,1
+6,2,Prolactin,mIU/L,female,<500,9
+7,2,Prolactin,mIU/L,male,<450,9
+8,2,ACTH,ng/L,general,10–50,8
+9,2,Cortisol (9am),nmol/L,general,200–700,7
+10,2,Free T3,pmol/L,general,3.5–7.8,6
+11,2,Free T4,pmol/L,general,9–25,5
+12,2,TSH,mU/L,general,0.4–4.0,4
+13,2,HbA1c,mmol/mol,diabetes,≥48,3
+14,2,HbA1c,mmol/mol,pre-diabetes,42–47,3
+15,2,HbA1c,mmol/mol,normal,<42,3
+16,2,Random Glucose,mmol/L,general,<7.8,2
+17,2,Fasting Glucose,mmol/L,general,3.5–5.4,1
+18,3,Lipase,U/L,general,<60,2
+19,3,Amylase,U/L,general,30–110,1
+20,4,Cholesterol:HDL ratio,,general,<4.5,5
+21,4,Triglycerides,mmol/L,general,<1.7,4
+22,4,LDL,mmol/L,general,<3.0,3
+23,4,HDL,mmol/L,female,>1.2,2
+24,4,HDL,mmol/L,male,>1.0,2
+25,4,Total Cholesterol,mmol/L,general,<5.0,1
+26,5,Lactate,mmol/L,general,0.5–2.2,6
+27,5,Base excess,mmol/L,general,–2 to +2,5
+28,5,HCO₃⁻,mmol/L,general,22–29,4
+29,5,PaCO₂,kPa,general,4.7–6.0,3
+30,5,PaO₂,kPa,on air,10–13,2
+31,5,pH,,general,7.35–7.45,1
+32,6,ESR,mm/hr,female,<20,2
+33,6,ESR,mm/hr,male,<15,2
+34,6,CRP,mg/L,general,<5,1
+35,7,Parathyroid Hormone (PTH),pmol/L,general,1.6–6.9,5
+36,7,Vitamin D (25-OH),nmol/L,general,>50 (sufficient),4
+37,7,Magnesium,mmol/L,general,0.7–1.0,3
+38,7,Phosphate,mmol/L,general,0.8–1.5,2
+39,7,Calcium (corrected),mmol/L,general,2.2–2.6,1
+40,8,LDH,U/L,general,125–220,4
+41,8,CK (Creatine Kinase),U/L,female,25–200,3
+42,8,CK (Creatine Kinase),U/L,male,40–320,3
+43,8,BNP,pg/mL,suggestive of HF,>400 suggests HF,2
+44,8,BNP,pg/mL,normal,<100 (normal),2
+45,8,Troponin T (hs-cTnT),ng/L,general,<14 (assay-dependent),1
+46,9,Total Protein,g/L,general,60–80,7
+47,9,Albumin,g/L,general,35–50,6
+48,9,Gamma GT (GGT),IU/L,female,<38,5
+49,9,Gamma GT (GGT),IU/L,male,<55,5
+50,9,ALP,IU/L,general,30–130,4
+51,9,AST,IU/L,general,<40,3
+52,9,ALT,IU/L,general,<41,2
+53,9,Bilirubin (total),µmol/L,general,<21,1
+54,10,Chloride (Cl⁻),mmol/L,general,98–107,7
+55,10,Bicarbonate (HCO₃⁻),mmol/L,general,22–29,6
+56,10,eGFR,mL/min/1.73m²,general,>90 (normal),5
+57,10,Creatinine,µmol/L,female,45–90,4
+58,10,Creatinine,µmol/L,male,60–110,4
+59,10,Urea,mmol/L,general,2.5–7.8,3
+60,10,Potassium (K⁺),mmol/L,general,3.5–5.0,2
+61,10,Sodium (Na⁺),mmol/L,general,135–145,1
+62,11,Folate,µg/L,general,>3,6
+63,11,Vitamin B12,ng/L,general,160–925,5
+64,11,Transferrin saturation,%,general,20–50,4
+65,11,TIBC,µmol/L,general,45–72,3
+66,11,Iron,µmol/L,general,10–30,2
+67,11,Ferritin,µg/L,female,15–150,1
+68,11,Ferritin,µg/L,male,30–400,1
+69,12,Platelets,×10⁹/L,general,150–400,12
+70,12,Basophils,×10⁹/L,general,0.0–0.1,11
+71,12,Eosinophils,×10⁹/L,general,0.0–0.4,10
+72,12,Monocytes,×10⁹/L,general,0.2–0.8,9
+73,12,Lymphocytes,×10⁹/L,general,1.5–4.0,8
+74,12,Neutrophils,×10⁹/L,general,2.0–7.5,7
+75,12,White Cell Count (WCC),×10⁹/L,general,4.0–11.0,6
+76,12,Mean Corpuscular Haemoglobin (MCH),pg,general,27–33,5
+77,12,Mean Corpuscular Volume (MCV),fL,general,80–96,4
+78,12,Red Blood Cell Count,×10¹²/L,female,3.9–5.6,3
+79,12,Red Blood Cell Count,×10¹²/L,male,4.5–6.5,3
+80,12,Haematocrit (Hct),,female,0.36–0.47,2
+81,12,Haematocrit (Hct),,male,0.40–0.52,2
+82,12,Haemoglobin,g/L,female,115–165,1
+83,12,Haemoglobin,g/L,male,130–180,1

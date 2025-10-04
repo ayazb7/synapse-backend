@@ -18,6 +18,8 @@ returns table (
   id uuid,
   question_id uuid,
   user_id uuid,
+  user_username text,
+  user_email text,
   parent_id uuid,
   content text,
   created_at timestamptz,
@@ -29,6 +31,8 @@ returns table (
   select c.id,
          c.question_id,
          c.user_id,
+         u.username as user_username,
+         u.email as user_email,
          c.parent_id,
          c.content,
          c.created_at,
@@ -37,6 +41,7 @@ returns table (
          exists(select 1 from public.question_comment_likes l where l.comment_id = c.id and l.user_id = p_user_id) as liked,
          coalesce(rc.cnt, 0) as reply_count
   from public.question_comments c
+  join public.users u on u.id = c.user_id
   left join (
     select comment_id, count(*) as cnt from public.question_comment_likes group by comment_id
   ) lc on lc.comment_id = c.id
@@ -56,6 +61,8 @@ returns table (
   id uuid,
   question_id uuid,
   user_id uuid,
+  user_username text,
+  user_email text,
   parent_id uuid,
   content text,
   created_at timestamptz,
@@ -66,6 +73,8 @@ returns table (
   select c.id,
          c.question_id,
          c.user_id,
+         u.username as user_username,
+         u.email as user_email,
          c.parent_id,
          c.content,
          c.created_at,
@@ -73,6 +82,7 @@ returns table (
          coalesce(lc.cnt, 0) as like_count,
          exists(select 1 from public.question_comment_likes l where l.comment_id = c.id and l.user_id = p_user_id) as liked
   from public.question_comments c
+  join public.users u on u.id = c.user_id
   left join (
     select comment_id, count(*) as cnt from public.question_comment_likes group by comment_id
   ) lc on lc.comment_id = c.id

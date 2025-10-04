@@ -1,0 +1,84 @@
+id,category,analyte,unit,population,value_text,category_order,item_order
+1,Haematology – Full Blood Count (FBC),Haemoglobin,g/L,male,130–180,1,1
+2,Haematology – Full Blood Count (FBC),Haemoglobin,g/L,female,115–165,1,1
+3,Haematology – Full Blood Count (FBC),Haematocrit (Hct),,male,0.40–0.52,1,2
+4,Haematology – Full Blood Count (FBC),Haematocrit (Hct),,female,0.36–0.47,1,2
+5,Haematology – Full Blood Count (FBC),Red Blood Cell Count,×10¹²/L,male,4.5–6.5,1,3
+6,Haematology – Full Blood Count (FBC),Red Blood Cell Count,×10¹²/L,female,3.9–5.6,1,3
+7,Haematology – Full Blood Count (FBC),Mean Corpuscular Volume (MCV),fL,general,80–96,1,4
+8,Haematology – Full Blood Count (FBC),Mean Corpuscular Haemoglobin (MCH),pg,general,27–33,1,5
+9,Haematology – Full Blood Count (FBC),White Cell Count (WCC),×10⁹/L,general,4.0–11.0,1,6
+10,Haematology – Full Blood Count (FBC),Neutrophils,×10⁹/L,general,2.0–7.5,1,7
+11,Haematology – Full Blood Count (FBC),Lymphocytes,×10⁹/L,general,1.5–4.0,1,8
+12,Haematology – Full Blood Count (FBC),Monocytes,×10⁹/L,general,0.2–0.8,1,9
+13,Haematology – Full Blood Count (FBC),Eosinophils,×10⁹/L,general,0.0–0.4,1,10
+14,Haematology – Full Blood Count (FBC),Basophils,×10⁹/L,general,0.0–0.1,1,11
+15,Haematology – Full Blood Count (FBC),Platelets,×10⁹/L,general,150–400,1,12
+16,Urea & Electrolytes (U&E / Renal Profile),Sodium (Na⁺),mmol/L,general,135–145,2,1
+17,Urea & Electrolytes (U&E / Renal Profile),Potassium (K⁺),mmol/L,general,3.5–5.0,2,2
+18,Urea & Electrolytes (U&E / Renal Profile),Urea,mmol/L,general,2.5–7.8,2,3
+19,Urea & Electrolytes (U&E / Renal Profile),Creatinine,µmol/L,male,60–110,2,4
+20,Urea & Electrolytes (U&E / Renal Profile),Creatinine,µmol/L,female,45–90,2,4
+21,Urea & Electrolytes (U&E / Renal Profile),eGFR,mL/min/1.73m²,general,>90 (normal),2,5
+22,Urea & Electrolytes (U&E / Renal Profile),Bicarbonate (HCO₃⁻),mmol/L,general,22–29,2,6
+23,Urea & Electrolytes (U&E / Renal Profile),Chloride (Cl⁻),mmol/L,general,98–107,2,7
+24,Liver Function Tests (LFTs),Bilirubin (total),µmol/L,general,<21,3,1
+25,Liver Function Tests (LFTs),ALT,IU/L,general,<41,3,2
+26,Liver Function Tests (LFTs),AST,IU/L,general,<40,3,3
+27,Liver Function Tests (LFTs),ALP,IU/L,general,30–130,3,4
+28,Liver Function Tests (LFTs),Gamma GT (GGT),IU/L,male,<55,3,5
+29,Liver Function Tests (LFTs),Gamma GT (GGT),IU/L,female,<38,3,5
+30,Liver Function Tests (LFTs),Albumin,g/L,general,35–50,3,6
+31,Liver Function Tests (LFTs),Total Protein,g/L,general,60–80,3,7
+32,Bone & Mineral Profile,Calcium (corrected),mmol/L,general,2.2–2.6,4,1
+33,Bone & Mineral Profile,Phosphate,mmol/L,general,0.8–1.5,4,2
+34,Bone & Mineral Profile,Magnesium,mmol/L,general,0.7–1.0,4,3
+35,Bone & Mineral Profile,Vitamin D (25-OH),nmol/L,general,>50 (sufficient),4,4
+36,Bone & Mineral Profile,Parathyroid Hormone (PTH),pmol/L,general,1.6–6.9,4,5
+37,Endocrine & Diabetes,Fasting Glucose,mmol/L,general,3.5–5.4,5,1
+38,Endocrine & Diabetes,Random Glucose,mmol/L,general,<7.8,5,2
+39,Endocrine & Diabetes,HbA1c,mmol/mol,normal,<42,5,3
+40,Endocrine & Diabetes,HbA1c,mmol/mol,pre-diabetes,42–47,5,3
+41,Endocrine & Diabetes,HbA1c,mmol/mol,diabetes,≥48,5,3
+42,Endocrine & Diabetes,TSH,mU/L,general,0.4–4.0,5,4
+43,Endocrine & Diabetes,Free T4,pmol/L,general,9–25,5,5
+44,Endocrine & Diabetes,Free T3,pmol/L,general,3.5–7.8,5,6
+45,Endocrine & Diabetes,Cortisol (9am),nmol/L,general,200–700,5,7
+46,Endocrine & Diabetes,ACTH,ng/L,general,10–50,5,8
+47,Endocrine & Diabetes,Prolactin,mIU/L,male,<450,5,9
+48,Endocrine & Diabetes,Prolactin,mIU/L,female,<500,5,9
+49,Lipid Profile,Total Cholesterol,mmol/L,general,<5.0,6,1
+50,Lipid Profile,HDL,mmol/L,male,>1.0,6,2
+51,Lipid Profile,HDL,mmol/L,female,>1.2,6,2
+52,Lipid Profile,LDL,mmol/L,general,<3.0,6,3
+53,Lipid Profile,Triglycerides,mmol/L,general,<1.7,6,4
+54,Lipid Profile,Cholesterol:HDL ratio,,general,<4.5,6,5
+55,Cardiac Markers,Troponin T (hs-cTnT),ng/L,general,<14 (assay-dependent),7,1
+56,Cardiac Markers,BNP,pg/mL,normal,<100 (normal),7,2
+57,Cardiac Markers,BNP,pg/mL,suggestive of HF,>400 suggests HF,7,2
+58,Cardiac Markers,CK (Creatine Kinase),U/L,male,40–320,7,3
+59,Cardiac Markers,CK (Creatine Kinase),U/L,female,25–200,7,3
+60,Cardiac Markers,LDH,U/L,general,125–220,7,4
+61,Pancreatic / GI,Amylase,U/L,general,30–110,8,1
+62,Pancreatic / GI,Lipase,U/L,general,<60,8,2
+63,Arterial/Venous Blood Gas (ABG/VBG),pH,,general,7.35–7.45,9,1
+64,Arterial/Venous Blood Gas (ABG/VBG),PaO₂,kPa,on air,10–13,9,2
+65,Arterial/Venous Blood Gas (ABG/VBG),PaCO₂,kPa,general,4.7–6.0,9,3
+66,Arterial/Venous Blood Gas (ABG/VBG),HCO₃⁻,mmol/L,general,22–29,9,4
+67,Arterial/Venous Blood Gas (ABG/VBG),Base excess,mmol/L,general,–2 to +2,9,5
+68,Arterial/Venous Blood Gas (ABG/VBG),Lactate,mmol/L,general,0.5–2.2,9,6
+69,Iron Studies & Nutrition,Ferritin,µg/L,male,30–400,10,1
+70,Iron Studies & Nutrition,Ferritin,µg/L,female,15–150,10,1
+71,Iron Studies & Nutrition,Iron,µmol/L,general,10–30,10,2
+72,Iron Studies & Nutrition,TIBC,µmol/L,general,45–72,10,3
+73,Iron Studies & Nutrition,Transferrin saturation,%,general,20–50,10,4
+74,Iron Studies & Nutrition,Vitamin B12,ng/L,general,160–925,10,5
+75,Iron Studies & Nutrition,Folate,µg/L,general,>3,10,6
+76,Inflammatory Markers,CRP,mg/L,general,<5,11,1
+77,Inflammatory Markers,ESR,mm/hr,male,<15,11,2
+78,Inflammatory Markers,ESR,mm/hr,female,<20,11,2
+79,Coagulation Profile,PT,s,general,11–14,12,1
+80,Coagulation Profile,INR,,general,0.8–1.2 (therapeutic: 2.0–3.0; higher for mechanical valves),12,2
+81,Coagulation Profile,aPTT,s,general,25–35,12,3
+82,Coagulation Profile,Fibrinogen,g/L,general,1.5–4.0,12,4
+83,Coagulation Profile,D-dimer,µg/mL FEU,general,<0.5,12,5

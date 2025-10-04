@@ -1,0 +1,13 @@
+id,title,group_order
+1,Coagulation Profile,12
+2,Endocrine & Diabetes,5
+3,Pancreatic / GI,8
+4,Lipid Profile,6
+5,Arterial/Venous Blood Gas (ABG/VBG),9
+6,Inflammatory Markers,11
+7,Bone & Mineral Profile,4
+8,Cardiac Markers,7
+9,Liver Function Tests (LFTs),3
+10,Urea & Electrolytes (U&E / Renal Profile),2
+11,Iron Studies & Nutrition,10
+12,Haematology – Full Blood Count (FBC),1

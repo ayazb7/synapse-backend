@@ -331,6 +331,7 @@ app.get('/textbook/outline', authMiddleware({ supabase }), async (_req, res) => 
           specialty_id: row.specialty_id,
           specialty_name: row.specialty_name,
           specialty_slug: row.specialty_slug,
+          thumbnail_url: `${env.SUPABASE_URL}/storage/v1/object/public/images/specialty-thumbnails/${row.specialty_slug}.jpeg`,
           topics: {},
         };
       }
@@ -395,7 +396,12 @@ app.get('/textbook/specialty/:slug', authMiddleware({ supabase }), async (req, r
     has_page: Array.isArray(t.textbook_pages) ? t.textbook_pages.length > 0 : !!t.textbook_pages,
   }));
 
-  res.json({ specialty: spec, topics: normalized });
+  const specialty = {
+    ...spec,
+    thumbnail_url: `${env.SUPABASE_URL}/storage/v1/object/public/images/specialty-thumbnails/${slug}.jpeg`,
+  } as any;
+
+  res.json({ specialty, topics: normalized });
 });
 
 // Page content for a topic by slug
@@ -643,21 +649,61 @@ app.get('/qbank/practice/next', authMiddleware({ supabase }), async (req, res) =
 app.get('/reference-ranges', authMiddleware({ supabase }), async (_req, res) => {
   try {
     const [gRes, iRes] = await Promise.all([
-      supabase.from('reference_range_groups').select('id, title, group_order').order('group_order', { ascending: true }),
-      supabase.from('reference_range_items').select('group_id, analyte, unit, population, value_text, item_order').order('item_order', { ascending: true })
+      supabaseAdmin
+        .from('reference_range_groups')
+        .select('id, title, group_order')
+        .order('group_order', { ascending: true }),
+      supabaseAdmin
+        .from('reference_range_items')
+        .select('group_id, analyte, unit, population, value_text, item_order')
+        .order('item_order', { ascending: true })
     ]);
 
     if (gRes.error) return res.status(500).json({ error: gRes.error.message });
     if (iRes.error) return res.status(500).json({ error: iRes.error.message });
 
-    const groupIdToItems: Record<string, any[]> = {};
-    for (const it of iRes.data || []) {
-      const key = String(it.group_id);
-      if (!groupIdToItems[key]) groupIdToItems[key] = [];
-      groupIdToItems[key].push({ analyte: it.analyte, unit: it.unit, population: it.population, value_text: it.value_text });
-    }
+    let groups: Array<{ id: string | number; title: string; items: any[] }> = [];
 
-    const groups = (gRes.data || []).map((g: any) => ({ id: g.id, title: g.title, items: groupIdToItems[String(g.id)] || [] }));
+    if ((gRes.data || []).length > 0) {
+      // Build from new grouped tables
+      const groupIdToItems: Record<string, any[]> = {};
+      for (const it of iRes.data || []) {
+        const key = String((it as any).group_id);
+        if (!groupIdToItems[key]) groupIdToItems[key] = [];
+        groupIdToItems[key].push({
+          analyte: (it as any).analyte,
+          unit: (it as any).unit,
+          population: (it as any).population,
+          value_text: (it as any).value_text,
+        });
+      }
+      groups = (gRes.data || []).map((g: any) => ({ id: g.id, title: g.title, items: groupIdToItems[String(g.id)] || [] }));
+    } else {
+      // Fallback to legacy table: reference_ranges (category-based)
+      const rrRes = await supabaseAdmin
+        .from('reference_ranges')
+        .select('category, analyte, unit, population, value_text, category_order, item_order')
+        .order('category_order', { ascending: true })
+        .order('item_order', { ascending: true });
+
+      if (rrRes.error) return res.status(500).json({ error: rrRes.error.message });
+
+      const catToItems: Record<string, any[]> = {};
+      const catOrder: Record<string, number> = {};
+      for (const it of rrRes.data || []) {
+        const category = (it as any).category || 'General';
+        if (!catToItems[category]) catToItems[category] = [];
+        if (catOrder[category] === undefined) catOrder[category] = (it as any).category_order || 0;
+        catToItems[category].push({
+          analyte: (it as any).analyte,
+          unit: (it as any).unit,
+          population: (it as any).population,
+          value_text: (it as any).value_text,
+        });
+      }
+      const categories = Object.keys(catToItems).sort((a, b) => (catOrder[a] ?? 0) - (catOrder[b] ?? 0));
+      groups = categories.map((cat, idx) => ({ id: idx + 1, title: cat, items: catToItems[cat] || [] }));
+    }
 
     res.set({ 'Cache-Control': 'private, max-age=300' });
     res.json({ groups });
@@ -719,7 +765,7 @@ app.get('/qbank/questions/:questionId/comments', authMiddleware({ supabase }), a
     const comments = (data || []).map((c: any) => ({
       id: c.id,
       question_id: c.question_id,
-      user: { id: c.user_id },
+      user: { id: c.user_id, username: c.user_username, email: c.user_email },
       parent_id: c.parent_id,
       content: c.content,
       created_at: c.created_at,
@@ -785,7 +831,7 @@ app.get('/qbank/comments/:commentId/replies', authMiddleware({ supabase }), asyn
     const replies = (data || []).map((c: any) => ({
       id: c.id,
       question_id: c.question_id,
-      user: { id: c.user_id },
+      user: { id: c.user_id, username: c.user_username, email: c.user_email },
       parent_id: c.parent_id,
       content: c.content,
       created_at: c.created_at,
