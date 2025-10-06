@@ -317,14 +317,24 @@ app.get('/qbank/performance/trend', authMiddleware({ supabase }), async (req, re
 // Outline: specialties -> topics -> page -> top-level sections
 app.get('/textbook/outline', authMiddleware({ supabase }), async (_req, res) => {
   try {
-    const { data, error } = await supabase
-      .from('v_textbook_outline')
-      .select('*');
-    if (error) return res.status(500).json({ error: error.message });
+    const pageSize = 1000;
+    let start = 0;
+    let allRows: any[] = [];
+    while (true) {
+      const { data: page, error: pErr } = await supabase
+        .from('v_textbook_outline')
+        .select('*')
+        .range(start, start + pageSize - 1);
+      if (pErr) return res.status(500).json({ error: pErr.message });
+      if (page && page.length > 0) allRows = allRows.concat(page);
+      if (!page || page.length < pageSize) break;
+      start += pageSize;
+    }
 
     // Group by specialty and topic for frontend convenience
     const map: any = {};
-    for (const row of data || []) {
+    console.log(`Processing ${allRows.length} outline rows`);
+    for (const row of allRows || []) {
       const sId = row.specialty_id;
       if (!map[sId]) {
         map[sId] = {
@@ -365,6 +375,11 @@ app.get('/textbook/outline', authMiddleware({ supabase }), async (_req, res) => 
       ...s,
       topics: Object.values(s.topics),
     }));
+
+    console.log(`Loading textbook outline: `);
+    for (const s of specialties) {
+      console.log(`- Specialty: ${s.specialty_name} (${s.topics.length} topics)`);
+    }
 
     res.set({ 'Cache-Control': 'private, max-age=15' });
     res.json({ specialties });
