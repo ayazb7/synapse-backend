@@ -399,17 +399,76 @@ app.get('/textbook/specialty/:slug', authMiddleware({ supabase }), async (req, r
     .single();
   if (sErr) return res.status(404).json({ error: 'Specialty not found' });
 
-  const { data: topics, error } = await supabase
+  // Load topics with their page and nested subtopics with their page
+  // Load topics
+  const { data: topics, error: tErr2 } = await supabase
     .from('topics')
     .select('id, name, slug, description, textbook_pages(id, title, slug, status)')
     .eq('specialty_id', spec.id)
     .order('name');
-  if (error) return res.status(500).json({ error: error.message });
+  if (tErr2) return res.status(500).json({ error: tErr2.message });
 
-  const normalized = (topics || []).map((t: any) => ({
-    ...t,
-    has_page: Array.isArray(t.textbook_pages) ? t.textbook_pages.length > 0 : !!t.textbook_pages,
-  }));
+  // Load all subtopics for these topics (flat), including their pages
+  const topicIds = (topics || []).map((t: any) => t.id);
+  let allSubtopics: any[] = [];
+  if (topicIds.length > 0) {
+    const { data: sts, error: stErr2 } = await supabase
+      .from('subtopics')
+      .select('id, topic_id, parent_subtopic_id, name, slug, description, textbook_pages!textbook_pages_subtopic_id_fkey(id, title, slug, status)')
+      .in('topic_id', topicIds);
+    if (stErr2) return res.status(500).json({ error: stErr2.message });
+    allSubtopics = sts || [];
+  }
+
+  // Build subtopic tree per topic
+  const topicIdToTree: Record<string, any[]> = {};
+  const topicIdToNodes: Record<string, Record<string, any>> = {};
+  for (const t of topics || []) {
+    topicIdToTree[t.id] = [];
+    topicIdToNodes[t.id] = {};
+  }
+  for (const st of allSubtopics) {
+    const node = {
+      id: st.id,
+      name: st.name,
+      slug: st.slug,
+      description: st.description,
+      parent_subtopic_id: st.parent_subtopic_id,
+      textbook_pages: st.textbook_pages || [],
+      has_page: Array.isArray(st.textbook_pages) ? st.textbook_pages.length > 0 : !!st.textbook_pages,
+      children: [],
+    };
+    const nodeMap = topicIdToNodes[st.topic_id] || (topicIdToNodes[st.topic_id] = {});
+    nodeMap[st.id] = node;
+  }
+  for (const st of allSubtopics) {
+    const parentId = st.parent_subtopic_id;
+    const topicId = st.topic_id;
+    if (!topicIdToNodes[topicId]) topicIdToNodes[topicId] = {};
+    if (!topicIdToTree[topicId]) topicIdToTree[topicId] = [];
+    if (parentId && topicIdToNodes[topicId][parentId]) {
+      topicIdToNodes[topicId][parentId].children.push(topicIdToNodes[topicId][st.id]);
+    } else {
+      topicIdToTree[topicId].push(topicIdToNodes[topicId][st.id]);
+    }
+  }
+
+  // Normalize topics with their tree
+  const normalized = (topics || []).map((t: any) => {
+    const hasTopicPage = Array.isArray(t.textbook_pages) ? t.textbook_pages.length > 0 : !!t.textbook_pages;
+    const subtopicsTree = topicIdToTree[t.id] || [];
+    const hasSubtopics = subtopicsTree.length > 0;
+    return {
+      id: t.id,
+      name: t.name,
+      slug: t.slug,
+      description: t.description,
+      has_page: hasTopicPage,
+      has_subtopics: hasSubtopics,
+      subtopics: subtopicsTree,
+      textbook_pages: t.textbook_pages || [],
+    };
+  });
 
   const specialty = {
     ...spec,
@@ -422,55 +481,106 @@ app.get('/textbook/specialty/:slug', authMiddleware({ supabase }), async (req, r
 // Page content for a topic by slug
 app.get('/textbook/:topicSlug', authMiddleware({ supabase }), async (req, res) => {
   const { topicSlug } = req.params as { topicSlug: string };
-  // Locate topic and page
+  // Try resolve as topic first
   const { data: topic, error: tErr } = await supabase
     .from('topics')
     .select('id, name, slug, specialty_id, specialties:specialty_id(name, slug)')
     .eq('slug', topicSlug)
-    .single();
-  if (tErr) return res.status(404).json({ error: 'Topic not found' });
+    .maybeSingle();
 
-  const { data: page, error: pErr } = await supabase
+  if (topic && !tErr) {
+    const { data: page, error: pErr } = await supabase
+      .from('textbook_pages')
+      .select('id, title, slug, summary, status')
+      .eq('topic_id', (topic as any).id)
+      .single();
+    if (pErr) return res.status(404).json({ error: 'Textbook page not found' });
+
+    const { data: sections, error: sErr2 } = await supabase
+      .from('textbook_sections')
+      .select('id, parent_section_id, title, anchor_slug, section_type, position')
+      .eq('page_id', page.id)
+      .order('position');
+    if (sErr2) return res.status(500).json({ error: sErr2.message });
+
+    const sectionIds = (sections || []).map((s: any) => s.id);
+    let blocks: any[] = [];
+    if (sectionIds.length > 0) {
+      const { data: bData, error: bErr } = await supabase
+        .from('textbook_blocks')
+        .select('id, section_id, block_type, position, content, data')
+        .in('section_id', sectionIds)
+        .order('position');
+      if (bErr) return res.status(500).json({ error: bErr.message });
+      blocks = bData || [];
+    }
+
+    const { data: citations, error: cErr } = await supabase
+      .from('textbook_citations')
+      .select('id, section_id, citation_key, label, source_type, authors, year, publisher, url, accessed_on, raw_citation, position')
+      .eq('page_id', page.id)
+      .order('position');
+    if (cErr) return res.status(500).json({ error: cErr.message });
+
+    const { data: tags } = await supabase
+      .from('textbook_page_tags')
+      .select('tag')
+      .eq('page_id', page.id);
+
+    res.set({ 'Cache-Control': 'private, max-age=30' });
+    return res.json({ topic, page, sections: sections || [], blocks, citations: citations || [], tags: (tags || []).map((t: any) => t.tag) });
+  }
+
+  // Fallback: resolve as subtopic
+  const { data: subtopic, error: stErr } = await supabase
+    .from('subtopics')
+    .select('id, name, slug, topic_id, topics:topic_id(id, name, slug, specialty_id, specialties:specialty_id(name, slug))')
+    .eq('slug', topicSlug)
+    .maybeSingle();
+  if (!subtopic || stErr) {
+    return res.status(404).json({ error: 'Topic or subtopic not found' });
+  }
+
+  const { data: page, error: pErr2 } = await supabase
     .from('textbook_pages')
     .select('id, title, slug, summary, status')
-    .eq('topic_id', (topic as any).id)
+    .eq('subtopic_id', (subtopic as any).id)
     .single();
-  if (pErr) return res.status(404).json({ error: 'Textbook page not found' });
+  if (pErr2) return res.status(404).json({ error: 'Textbook page not found' });
 
-  // Sections and blocks
-  const { data: sections, error: sErr2 } = await supabase
+  const { data: sections, error: sErr3 } = await supabase
     .from('textbook_sections')
     .select('id, parent_section_id, title, anchor_slug, section_type, position')
     .eq('page_id', page.id)
     .order('position');
-  if (sErr2) return res.status(500).json({ error: sErr2.message });
+  if (sErr3) return res.status(500).json({ error: sErr3.message });
 
-  const sectionIds = (sections || []).map((s: any) => s.id);
-  let blocks: any[] = [];
-  if (sectionIds.length > 0) {
-    const { data: bData, error: bErr } = await supabase
+  const sectionIds2 = (sections || []).map((s: any) => s.id);
+  let blocks2: any[] = [];
+  if (sectionIds2.length > 0) {
+    const { data: bData2, error: bErr2 } = await supabase
       .from('textbook_blocks')
       .select('id, section_id, block_type, position, content, data')
-      .in('section_id', sectionIds)
+      .in('section_id', sectionIds2)
       .order('position');
-    if (bErr) return res.status(500).json({ error: bErr.message });
-    blocks = bData || [];
+    if (bErr2) return res.status(500).json({ error: bErr2.message });
+    blocks2 = bData2 || [];
   }
 
-  const { data: citations, error: cErr } = await supabase
+  const { data: citations2, error: cErr2 } = await supabase
     .from('textbook_citations')
     .select('id, section_id, citation_key, label, source_type, authors, year, publisher, url, accessed_on, raw_citation, position')
     .eq('page_id', page.id)
     .order('position');
-  if (cErr) return res.status(500).json({ error: cErr.message });
+  if (cErr2) return res.status(500).json({ error: cErr2.message });
 
-  const { data: tags } = await supabase
+  const { data: tags2 } = await supabase
     .from('textbook_page_tags')
     .select('tag')
     .eq('page_id', page.id);
 
   res.set({ 'Cache-Control': 'private, max-age=30' });
-  res.json({ topic, page, sections: sections || [], blocks, citations: citations || [], tags: (tags || []).map((t: any) => t.tag) });
+  return res.json({ subtopic, topic: (subtopic as any).topics, page, sections: sections || [], blocks: blocks2, citations: citations2 || [], tags: (tags2 || []).map((t: any) => t.tag) });
 });
 
 app.get('/qbank/practice/session', authMiddleware({ supabase }), async (req, res) => {
