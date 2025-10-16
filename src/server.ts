@@ -223,8 +223,33 @@ app.get('/qbank/specialties', authMiddleware({ supabase }), async (req, res) => 
   const authUser = (req as any).user;
   const { data, error } = await supabase.rpc('get_user_specialty_cards', { p_user_id: authUser.id });
   if (error) return res.status(500).json({ error: error.message });
+
+  // Enrich the response with specialties.icon_url
+  let enriched: any[] = data ?? [];
+  try {
+    const ids = Array.from(new Set((enriched || []).map((s: any) => s.specialty_id).filter(Boolean)));
+    if (ids.length > 0) {
+      const { data: specs, error: sErr } = await supabase
+        .from('specialties')
+        .select('id, icon_url')
+        .in('id', ids);
+      if (!sErr && specs) {
+        const idToIconUrl: Record<string, string | null> = {};
+        for (const sp of specs) {
+          idToIconUrl[String((sp as any).id)] = (sp as any).icon_url || null;
+        }
+        enriched = (enriched || []).map((s: any) => ({
+          ...s,
+          icon_url: idToIconUrl[String(s.specialty_id)] || null,
+        }));
+      }
+    }
+  } catch (_e) {
+    // If enrichment fails, fall back to RPC data as-is
+  }
+
   res.set({ 'Cache-Control': 'private, max-age=15' });
-  res.json({ specialties: data ?? [] });
+  res.json({ specialties: enriched });
 });
 
 app.get('/qbank/specialty/:specialtyId/topics', authMiddleware({ supabase }), async (req, res) => {
