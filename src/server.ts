@@ -413,6 +413,143 @@ app.get('/textbook/outline', authMiddleware({ supabase }), async (_req, res) => 
   }
 });
 
+// Global textbook search across pages/sections/blocks
+app.get('/textbook/search', authMiddleware({ supabase }), async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    const limit = Math.min(parseInt(String(req.query.limit || '25'), 10) || 25, 100);
+    const offset = Math.max(parseInt(String(req.query.offset || '0'), 10) || 0, 0);
+    if (!q || q.length < 2) return res.status(400).json({ error: 'q is required (min 2 chars)' });
+
+    // 1) Find matching content blocks
+    const { data: blocks, error: bErr } = await supabaseAdmin
+      .from('textbook_blocks')
+      .select('id, section_id, block_type, content')
+      .ilike('content', `%${q}%`)
+      .range(offset, offset + limit - 1);
+    if (bErr) return res.status(500).json({ error: bErr.message });
+    if (!blocks || blocks.length === 0) return res.json({ results: [] });
+
+    const sectionIds = Array.from(new Set((blocks || []).map((b: any) => b.section_id).filter(Boolean)));
+    const { data: sections, error: sErr } = await supabaseAdmin
+      .from('textbook_sections')
+      .select('id, page_id, title, anchor_slug')
+      .in('id', sectionIds);
+    if (sErr) return res.status(500).json({ error: sErr.message });
+    const secById: Record<string, any> = {};
+    for (const s of sections || []) secById[String((s as any).id)] = s;
+
+    const pageIds = Array.from(new Set((sections || []).map((s: any) => s.page_id).filter(Boolean)));
+    const { data: pages, error: pErr } = await supabaseAdmin
+      .from('textbook_pages')
+      .select('id, title, slug, topic_id, subtopic_id')
+      .in('id', pageIds);
+    if (pErr) return res.status(500).json({ error: pErr.message });
+    const pageById: Record<string, any> = {};
+    const topicIds = new Set<string>();
+    const subtopicIds = new Set<string>();
+    for (const p of pages || []) {
+      pageById[String((p as any).id)] = p;
+      if ((p as any).topic_id) topicIds.add(String((p as any).topic_id));
+      if ((p as any).subtopic_id) subtopicIds.add(String((p as any).subtopic_id));
+    }
+
+    let topics: any[] = [];
+    let subtopics: any[] = [];
+    if (topicIds.size > 0) {
+      const { data: tData, error: tErr } = await supabaseAdmin
+        .from('topics')
+        .select('id, name, slug')
+        .in('id', Array.from(topicIds));
+      if (tErr) return res.status(500).json({ error: tErr.message });
+      topics = tData || [];
+    }
+    if (subtopicIds.size > 0) {
+      const { data: stData, error: stErr } = await supabaseAdmin
+        .from('subtopics')
+        .select('id, name, slug')
+        .in('id', Array.from(subtopicIds));
+      if (stErr) return res.status(500).json({ error: stErr.message });
+      subtopics = stData || [];
+    }
+    const topicById: Record<string, any> = {};
+    const subtopicById: Record<string, any> = {};
+    for (const t of topics) topicById[String((t as any).id)] = t;
+    for (const st of subtopics) subtopicById[String((st as any).id)] = st;
+
+    const escapeHtml = (str: string) =>
+      str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    const stripTags = (html: string) => (html || '').replace(/<[^>]*>/g, ' ');
+    const decodeEntities = (text: string) =>
+      (text || '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&#x27;/g, "'")
+        .replace(/&#x2F;/g, '/');
+    const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const highlightHtmlFromText = (text: string, query: string) => {
+      if (!query) return escapeHtml(text);
+      const re = new RegExp(escapeRegex(query), 'ig');
+      let result = '';
+      let last = 0;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(text)) !== null) {
+        result += escapeHtml(text.slice(last, m.index));
+        result += `<mark>${escapeHtml(m[0])}</mark>`;
+        last = re.lastIndex;
+      }
+      result += escapeHtml(text.slice(last));
+      return result;
+    };
+    const buildSnippet = (rawHtml: string, query: string) => {
+      const plain = decodeEntities(stripTags(rawHtml)).replace(/\s+/g, ' ').trim();
+      const idx = plain.toLowerCase().indexOf(query.toLowerCase());
+      const totalLen = plain.length;
+      if (idx === -1) {
+        const slice = plain.slice(0, 180);
+        const html = highlightHtmlFromText(slice, query);
+        return (slice.length < totalLen ? html + '…' : html);
+      }
+      const start = Math.max(0, idx - 80);
+      const end = Math.min(totalLen, idx + query.length + 80);
+      const slice = plain.slice(start, end);
+      const prefix = start > 0 ? '…' : '';
+      const suffix = end < totalLen ? '…' : '';
+      const html = highlightHtmlFromText(slice, query);
+      return prefix + html + suffix;
+    };
+
+    const results = [] as any[];
+    for (const b of blocks || []) {
+      const sec = secById[String((b as any).section_id)];
+      const pg = sec ? pageById[String(sec.page_id)] : null;
+      if (!sec || !pg) continue;
+      const topic = pg.topic_id ? topicById[String(pg.topic_id)] : null;
+      const subtopic = pg.subtopic_id ? subtopicById[String(pg.subtopic_id)] : null;
+      const target_slug = subtopic?.slug || topic?.slug || pg.slug; // route accepts topic or subtopic slug
+      results.push({
+        page_id: pg.id,
+        page_title: pg.title,
+        section_title: sec.title,
+        section_anchor: sec.anchor_slug,
+        target_slug,
+        snippet_html: buildSnippet(String((b as any).content || ''), q),
+      });
+    }
+
+    return res.json({ results });
+  } catch (e: any) {
+    return res.status(500).json({ error: e?.message || 'Search failed' });
+  }
+});
+
 // Get all topics for a specialty with textbook pages
 app.get('/textbook/specialty/:slug', authMiddleware({ supabase }), async (req, res) => {
   const { slug } = req.params as { slug: string };

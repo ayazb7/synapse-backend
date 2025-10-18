@@ -123,6 +123,60 @@ export function buildAuthRouter({ supabase, supabaseAdmin }: BuildAuthRouterArgs
     return res.status(204).send();
   });
 
+  // Refresh session using refresh_token
+  router.post('/refresh', async (req, res) => {
+    try {
+      const isProduction = process.env.NODE_ENV === 'production';
+      const cookieRefreshToken = req.cookies?.[env.REFRESH_COOKIE_NAME] as string | undefined;
+      const bodySchema = z.object({ refresh_token: z.string().optional(), remember: z.boolean().optional().default(true) });
+      const parsed = bodySchema.safeParse(req.body || {});
+      const bodyRefresh = parsed.success ? parsed.data.refresh_token : undefined;
+      const remember = parsed.success ? parsed.data.remember : true;
+
+      const refreshToken = bodyRefresh || cookieRefreshToken;
+      if (!refreshToken) {
+        return res.status(401).json({ error: 'Missing refresh token' });
+      }
+
+      // Use Supabase to refresh the session
+      const { data, error } = await supabase.auth.refreshSession({ refresh_token: refreshToken });
+      if (error || !data.session) {
+        // Clear any existing cookies on failure
+        const clearOptions = {
+          httpOnly: true,
+          sameSite: isProduction ? 'none' as const : 'lax' as const,
+          secure: isProduction,
+          domain: isProduction ? undefined : undefined,
+        };
+        res.clearCookie(env.ACCESS_COOKIE_NAME, clearOptions);
+        res.clearCookie(env.REFRESH_COOKIE_NAME, clearOptions);
+        return res.status(401).json({ error: error?.message || 'Could not refresh session' });
+      }
+
+      // Set cookies (refresh for 30 days, access aligned; access can be session cookie if preferred)
+      const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+      const maxAge = remember ? THIRTY_DAYS_MS : undefined;
+      const cookieOptions = {
+        httpOnly: true,
+        sameSite: isProduction ? 'none' as const : 'lax' as const,
+        secure: isProduction,
+        maxAge,
+        domain: isProduction ? undefined : undefined,
+      };
+
+      res.cookie(env.ACCESS_COOKIE_NAME, data.session.access_token, cookieOptions);
+      res.cookie(env.REFRESH_COOKIE_NAME, data.session.refresh_token, cookieOptions);
+
+      return res.json({
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+        user: data.user,
+      });
+    } catch (e: any) {
+      return res.status(500).json({ error: e?.message || 'Failed to refresh session' });
+    }
+  });
+
   // Sets cookies from tokens coming from email link
   router.post('/set-session', async (req, res) => {
     const schema = z.object({
